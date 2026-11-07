@@ -1,13 +1,17 @@
 {
-  "id": "/",
-  "name": "Falak TV — Movies & Series",
-  "short_name": "Falak",
-  "description": "Arabic movie streaming platform with automatic smart subtitles and zero subscription.",
+  "name": "فلك -  famflix",
+  "short_name": "famflix",
+  "description": "منصة فلك لمشاهدة الأفلام والمسلسلات بجودة عالية مع تتبع المشاهدة والمفضلة.",
+  "lang": "ar",
+  "dir": "rtl",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait-primary",
   "background_color": "#07080b",
-  "theme_color": "#ff1e27",
+  "theme_color": "#07080b",
+  "categories": ["entertainment", "video", "movies"],
   "icons": [
     {
       "src": "/pwa-192x192.png",
@@ -26,6 +30,53 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "الرئيسية",
+      "short_name": "الرئيسية",
+      "description": "الصفحة الرئيسية لموقع فلك -famflix",
+      "url": "/",
+      "icons": [
+        {
+          "src": "/pwa-192x192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "البحث",
+      "short_name": "البحث",
+      "description": "ابحث عن فيلم أو مسلسل",
+      "url": "/falak?tab=search",
+      "icons": [
+        {
+          "src": "/pwa-192x192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "المفضلة",
+      "short_name": "المفضلة",
+      "description": "قائمة أفلامك ومسلسلاتك المحفوظة",
+      "url": "/falak?tab=favorites",
+      "icons": [
+        {
+          "src": "/pwa-192x192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
     }
   ]
 }

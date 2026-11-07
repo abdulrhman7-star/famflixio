@@ -81,7 +81,7 @@ export const T: Record<LangCode, Record<string, string>> = {
 
     // Video Player & Streaming Modes
     player_title: 'مشغل الفيديو الذكي',
-    player_loading: 'جاري استخراج السيرفرات وفحص الروابط...',
+    player_loading: 'جاري استخراج السيرفرات وتحميل المحتوى...',
     player_direct_mode: 'الرابط المباشر (Direct Stream)',
     player_proxy_mode: 'الوسيط الآمن (Proxy Stream)',
     player_mode_direct_desc: 'بث مباشر عالي السرعة من السيرفر الأصلي',
