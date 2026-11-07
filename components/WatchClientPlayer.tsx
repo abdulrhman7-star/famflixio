@@ -6,6 +6,7 @@ import {
   Play, 
   Download, 
   ArrowRight, 
+  ArrowLeft,
   ExternalLink, 
   RefreshCw, 
   AlertCircle, 
@@ -18,6 +19,7 @@ import {
 } from 'lucide-react';
 import EmbedModal from './EmbedModal';
 import { addToWatchHistory } from '@/lib/history';
+import { useLanguage } from '@/lib/LanguageContext';
 
 interface VideoLink {
   quality: string;
@@ -31,10 +33,13 @@ interface WatchClientPlayerProps {
 }
 
 export default function WatchClientPlayer({ initialUrl, title, image }: WatchClientPlayerProps) {
+  const { dir, t } = useLanguage();
+  const isRtl = dir === 'rtl';
+
   const [videoLinks, setVideoLinks] = useState<VideoLink[]>([]);
   const [selectedQualityIdx, setSelectedQualityIdx] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(Boolean(initialUrl));
-  const [error, setError] = useState<string>(!initialUrl ? 'لم يتم تزويد رابط صالح للمشاهدة' : '');
+  const [error, setError] = useState<string>(!initialUrl ? t('player_error_proxy', 'Invalid media URL') : '');
   const [videoError, setVideoError] = useState<boolean>(false);
   const [streamMode, setStreamMode] = useState<'direct' | 'proxy'>('direct');
   
@@ -43,14 +48,16 @@ export default function WatchClientPlayer({ initialUrl, title, image }: WatchCli
 
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  const fetchLinks = () => {
+  const fetchLinks = (forceLoading = true) => {
     if (!initialUrl) {
-      setError('لم يتم تزويد رابط صالح للمشاهدة');
+      setError(t('player_error_proxy', 'Invalid media URL'));
       setLoading(false);
       return;
     }
 
-    setLoading(true);
+    if (forceLoading) {
+      setLoading(true);
+    }
     setError('');
     setVideoError(false);
 
@@ -59,13 +66,17 @@ export default function WatchClientPlayer({ initialUrl, title, image }: WatchCli
       .then((data) => {
         if (data.success && Array.isArray(data.data) && data.data.length > 0) {
           setVideoLinks(data.data);
-          setSelectedQualityIdx(0);
+          addToWatchHistory({
+            title: title || 'فيديو مباشر',
+            url: initialUrl,
+            image: image,
+          });
         } else {
-          setError(data.error || 'تعذر استخراج روابط المشاهدة المباشرة');
+          setError(data.error || t('player_error_proxy', 'Failed to extract video stream links'));
         }
       })
       .catch(() => {
-        setError('حدث خطأ أثناء الاتصال بالخادم لجلب روابط التشغيل');
+        setError(t('toast_data_error', 'Connection error while communicating with server'));
       })
       .finally(() => {
         setLoading(false);
@@ -82,16 +93,19 @@ export default function WatchClientPlayer({ initialUrl, title, image }: WatchCli
         if (!isCancelled) {
           if (data.success && Array.isArray(data.data) && data.data.length > 0) {
             setVideoLinks(data.data);
-            setSelectedQualityIdx(0);
-            addToWatchHistory({ title, url: initialUrl, image });
+            addToWatchHistory({
+              title: title || 'فيديو مباشر',
+              url: initialUrl,
+              image: image,
+            });
           } else {
-            setError(data.error || 'تعذر استخراج روابط المشاهدة المباشرة');
+            setError(data.error || 'Failed to extract video stream links');
           }
         }
       })
       .catch(() => {
         if (!isCancelled) {
-          setError('حدث خطأ أثناء الاتصال بالخادم لجلب روابط التشغيل');
+          setError('Connection error while communicating with server');
         }
       })
       .finally(() => {
@@ -105,8 +119,6 @@ export default function WatchClientPlayer({ initialUrl, title, image }: WatchCli
     };
   }, [initialUrl, title, image]);
 
-  const activeVideoUrl = videoLinks[selectedQualityIdx]?.url;
-
   const switchQuality = (idx: number) => {
     if (!videoLinks[idx]) return;
     const currentTime = videoRef.current ? videoRef.current.currentTime : 0;
@@ -116,8 +128,10 @@ export default function WatchClientPlayer({ initialUrl, title, image }: WatchCli
     setVideoError(false);
 
     if (videoRef.current) {
-      const targetUrl = videoLinks[idx].url;
-      videoRef.current.src = streamMode === 'direct' ? targetUrl : `/api/stream?url=${encodeURIComponent(targetUrl)}`;
+      const targetUrl = streamMode === 'direct'
+        ? videoLinks[idx].url
+        : `/api/stream?url=${encodeURIComponent(videoLinks[idx].url)}`;
+      videoRef.current.src = targetUrl;
       videoRef.current.currentTime = currentTime;
       if (!isPaused) {
         videoRef.current.play().catch(() => {});
@@ -125,69 +139,71 @@ export default function WatchClientPlayer({ initialUrl, title, image }: WatchCli
     }
   };
 
-  const handleShare = () => {
+  const handleCopyShare = () => {
     if (typeof window !== 'undefined') {
       navigator.clipboard.writeText(window.location.href);
       setCopiedShare(true);
-      setTimeout(() => setCopiedShare(false), 2000);
+      setTimeout(() => setCopiedShare(false), 2500);
     }
   };
 
+  const activeVideoUrl = videoLinks[selectedQualityIdx]?.url;
+
   return (
-    <div className="max-w-5xl mx-auto p-4 md:p-6 min-h-screen text-white font-sans" dir="rtl">
-      {/* Navigation */}
-      <div className="flex items-center justify-between mb-6">
-        <Link 
-          href="/" 
-          className="flex items-center gap-2 text-gray-400 hover:text-white bg-gray-800/80 hover:bg-gray-800 px-4 py-2 rounded-xl transition-colors border border-gray-700/50 text-sm font-medium"
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 min-h-screen" dir={dir}>
+      {/* Top Action Breadcrumb */}
+      <div className="flex items-center justify-between mb-6 gap-3">
+        <Link
+          href="/"
+          className="flex items-center gap-2 text-slate-300 hover:text-white glass-card px-4 py-2 rounded-xl transition-all border border-white/10 text-xs sm:text-sm font-semibold active:scale-95"
         >
-          <ArrowRight className="w-4 h-4" />
-          العودة للرئيسية
+          {isRtl ? <ArrowRight className="w-4 h-4" /> : <ArrowLeft className="w-4 h-4" />}
+          <span>{t('btn_back_catalog', 'Back to Catalog')}</span>
         </Link>
 
         <button
-          onClick={handleShare}
-          className="flex items-center gap-1.5 px-3.5 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-xl text-xs font-semibold border border-gray-700/60 transition-colors"
+          onClick={handleCopyShare}
+          className="flex items-center gap-2 px-4 py-2 glass-card hover:border-blue-400/40 text-slate-200 hover:text-white rounded-xl text-xs font-semibold transition-all border border-white/10 active:scale-95"
         >
           {copiedShare ? (
             <>
               <Check className="w-4 h-4 text-emerald-400" />
-              <span className="text-emerald-400">تم نسخ الرابط!</span>
+              <span className="text-emerald-400">{t('toast_link_copied', 'Link copied!')}</span>
             </>
           ) : (
             <>
               <Share2 className="w-4 h-4 text-blue-400" />
-              <span>مشاركة الصفحة</span>
+              <span>{t('btn_share', 'Share')}</span>
             </>
           )}
         </button>
       </div>
 
-      <h1 className="text-2xl md:text-3xl font-black mb-6 text-center text-white drop-shadow-sm">
-        {title || 'مشاهدة الفيديو'}
+      <h1 className="text-2xl sm:text-3xl md:text-4xl font-black mb-8 text-center text-white tracking-tight text-balance">
+        {title || t('card_watch_now', 'Watch Video')}
       </h1>
 
       {loading ? (
-        <div className="aspect-video bg-gray-900 border border-gray-800 rounded-2xl flex flex-col items-center justify-center gap-4 text-gray-400">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent shadow-lg shadow-blue-500/20"></div>
-          <span className="text-sm font-medium">جاري استخراج رابط البث المباشر الموقّع...</span>
+        <div className="aspect-video glass-panel rounded-3xl border border-white/10 flex flex-col items-center justify-center gap-4 text-slate-400 shadow-2xl">
+          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin shadow-lg shadow-blue-500/30"></div>
+          <span className="text-sm font-medium animate-pulse">{t('player_loading', 'Preparing high-speed stream...')}</span>
         </div>
       ) : error ? (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-300 p-6 rounded-2xl text-center font-medium my-6 flex flex-col items-center gap-3 max-w-lg mx-auto">
+        <div className="glass-panel border-red-500/30 text-red-300 p-8 rounded-3xl text-center font-medium my-8 flex flex-col items-center gap-4 max-w-lg mx-auto shadow-2xl">
           <AlertCircle className="w-10 h-10 text-red-400" />
           <p className="text-base font-bold">{error}</p>
           <button
-            onClick={fetchLinks}
-            className="flex items-center gap-2 px-5 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl text-sm font-bold transition-colors mt-2"
+            onClick={() => fetchLinks()}
+            className="flex items-center gap-2 px-5 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold transition-all shadow-md active:scale-95"
           >
             <RefreshCw className="w-4 h-4" />
-            إعادة المحاولة
+            <span>{t('player_retry', 'Retry')}</span>
           </button>
         </div>
       ) : videoLinks.length > 0 ? (
         <div className="space-y-6">
           {/* Main Video Element */}
-          <div className="aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl relative border border-gray-800">
+          <div className="aspect-video bg-black rounded-3xl overflow-hidden shadow-2xl relative border border-white/10">
             <video
               key={`${streamMode}-${activeVideoUrl}`}
               ref={videoRef}
@@ -209,83 +225,111 @@ export default function WatchClientPlayer({ initialUrl, title, image }: WatchCli
               onPlay={() => setVideoError(false)}
             >
               <source src={activeVideoUrl} type="video/mp4" />
-              متصفحك لا يدعم مشغل الفيديو.
+              Your browser does not support HTML5 video streaming.
             </video>
           </div>
 
           {/* Mode Switcher Indicator */}
-          <div className="flex flex-wrap items-center justify-between gap-3 bg-gray-900/90 border border-gray-800 p-3.5 rounded-xl">
-            <div className="flex items-center gap-2 text-xs md:text-sm text-gray-300">
-              <span className="font-semibold text-gray-400">وضع التدفق:</span>
-              <div className="flex items-center bg-gray-800 p-1 rounded-lg border border-gray-700/60">
+          <div className="flex flex-wrap items-center justify-between gap-3 glass-panel p-4 rounded-2xl border border-white/10 shadow-lg">
+            <div className="flex items-center gap-2.5 text-xs sm:text-sm text-slate-300">
+              <span className="font-semibold text-slate-400">{t('player_title', 'Playback Mode')}:</span>
+              <div className="flex items-center bg-black/40 p-1 rounded-xl border border-white/10">
                 <button
                   onClick={() => {
                     setStreamMode('direct');
                     setVideoError(false);
                   }}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                     streamMode === 'direct'
                       ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
-                      : 'text-gray-400 hover:text-white'
+                      : 'text-slate-400 hover:text-white'
                   }`}
-                  title="تشغيل فوري مباشر من المصدر"
+                  title={t('player_mode_direct_desc', 'Direct connection to source video server')}
                 >
                   <Zap className="w-3.5 h-3.5 text-yellow-300" />
-                  <span>مباشر (Direct)</span>
+                  <span>{t('player_direct_mode', 'Direct Stream')}</span>
                 </button>
                 <button
                   onClick={() => {
                     setStreamMode('proxy');
                     setVideoError(false);
                   }}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                     streamMode === 'proxy'
                       ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                      : 'text-gray-400 hover:text-white'
+                      : 'text-slate-400 hover:text-white'
                   }`}
-                  title="تشغيل عبر سيرفر البروكسي الداخلي"
+                  title={t('player_mode_proxy_desc', 'Secure internal proxy')}
                 >
                   <Shield className="w-3.5 h-3.5 text-cyan-300" />
-                  <span>بروكسي (Proxy)</span>
+                  <span>{t('player_proxy_mode', 'Secure Proxy')}</span>
                 </button>
               </div>
             </div>
 
-            <div className="text-xs text-gray-400 font-mono dir-ltr">
-              {streamMode === 'direct' ? '⚡ Native Direct Stream (Zero Latency)' : '🛡️ Edge Buffered Proxy'}
+            <div className="text-[11px] text-slate-400 font-mono dir-ltr truncate">
+              {streamMode === 'direct' ? '⚡ Direct Source Mode (HTML5)' : '🛡️ Proxied Range Stream (/api/stream)'}
             </div>
           </div>
 
           {videoError && (
-            <div className="bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 p-4 rounded-xl text-center text-sm flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div className="text-right">
-                <p className="font-semibold">تعذر التشغيل أو انتهت صلاحية الرابط المباشر من المصدر.</p>
-                <p className="text-xs text-yellow-400/80 mt-1">انقر على &quot;تحديث الرابط&quot; لتوليد رابط مباشر جديد فوراً.</p>
+            <div className="glass-panel border-amber-500/30 text-amber-300 p-5 rounded-2xl text-xs sm:text-sm flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
+              <div className="text-start">
+                <p className="font-semibold">
+                  {streamMode === 'direct'
+                    ? t('player_error_direct', 'Direct stream could not load. Switch to proxy mode.')
+                    : t('player_error_proxy', 'Stream error. Please refresh or try another quality.')}
+                </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
+                {streamMode === 'direct' ? (
+                  <button
+                    onClick={() => {
+                      setStreamMode('proxy');
+                      setVideoError(false);
+                    }}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl flex items-center gap-1.5 text-xs transition-colors shadow-md shadow-blue-500/20 active:scale-95"
+                  >
+                    <Shield className="w-3.5 h-3.5" />
+                    <span>{t('player_switch_proxy', 'Switch to Proxy')}</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setStreamMode('direct');
+                      setVideoError(false);
+                    }}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl flex items-center gap-1.5 text-xs transition-colors shadow-md shadow-emerald-500/20 active:scale-95"
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>{t('player_switch_direct', 'Try Direct Stream')}</span>
+                  </button>
+                )}
                 <button
-                  onClick={fetchLinks}
-                  className="px-4 py-2 bg-yellow-600 hover:bg-yellow-500 text-black font-bold rounded-lg text-xs flex items-center gap-1.5 transition-colors"
+                  onClick={() => fetchLinks()}
+                  className="px-3.5 py-2 glass-card hover:bg-white/10 text-white font-semibold rounded-xl flex items-center gap-1 text-xs transition-colors border border-white/10 active:scale-95"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
-                  تحديث الرابط
+                  <span>{t('player_retry', 'Retry')}</span>
                 </button>
               </div>
             </div>
           )}
 
-          {/* Controls Bar: Qualities & Embed & Download */}
-          <div className="bg-gray-800/90 border border-gray-700/60 p-5 rounded-2xl flex flex-col md:flex-row gap-4 items-center justify-between shadow-xl">
-            <div className="flex items-center gap-2 flex-wrap justify-center md:justify-start">
-              <span className="text-gray-400 text-sm font-medium ml-2">الجودة المتوفرة:</span>
+          {/* Controls Bar: Quality Selector & Downloads */}
+          <div className="glass-panel p-5 rounded-3xl border border-white/10 flex flex-col md:flex-row gap-4 items-center justify-between shadow-2xl">
+            <div className="flex items-center gap-2.5 flex-wrap justify-center md:justify-start">
+              <span className="text-slate-400 text-xs sm:text-sm font-semibold">
+                {t('player_quality_select', 'Select Resolution:')}
+              </span>
               {videoLinks.map((link, idx) => (
                 <button
-                  key={`watch-quality-${idx}`}
+                  key={`quality-${idx}`}
                   onClick={() => switchQuality(idx)}
-                  className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                  className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all active:scale-95 cursor-pointer ${
                     selectedQualityIdx === idx
-                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 scale-105'
-                      : 'bg-gray-700/80 text-gray-300 hover:bg-gray-700 hover:text-white'
+                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 scale-105 border border-blue-400/40'
+                      : 'glass-card text-slate-300 hover:text-white border border-white/5'
                   }`}
                 >
                   {link.quality}
@@ -293,13 +337,13 @@ export default function WatchClientPlayer({ initialUrl, title, image }: WatchCli
               ))}
             </div>
 
-            <div className="flex items-center gap-2.5 flex-wrap justify-center md:justify-end">
+            <div className="flex items-center gap-3 flex-wrap justify-center md:justify-end">
               <button
                 onClick={() => setIsEmbedOpen(true)}
-                className="flex items-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-sm font-bold transition-all shadow-md shadow-blue-500/20"
+                className="flex items-center gap-1.5 px-4 py-2.5 glass-card hover:border-blue-400/40 text-slate-200 hover:text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-md active:scale-95"
               >
-                <Code2 className="w-4 h-4" />
-                <span>كود التضمين</span>
+                <Code2 className="w-4 h-4 text-blue-400" />
+                <span>{t('nav_embed', 'Embed Code')}</span>
               </button>
 
               {activeVideoUrl && (
@@ -307,20 +351,22 @@ export default function WatchClientPlayer({ initialUrl, title, image }: WatchCli
                   href={activeVideoUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 px-4 py-2.5 bg-gray-700 hover:bg-gray-600 rounded-xl text-sm font-semibold text-gray-200 transition-colors"
+                  className="flex items-center gap-1.5 px-4 py-2.5 glass-card hover:bg-white/10 rounded-xl text-xs sm:text-sm font-semibold text-slate-300 transition-colors border border-white/10"
                 >
                   <ExternalLink className="w-4 h-4" />
-                  <span>فتح بالمصدر</span>
+                  <span className="hidden sm:inline">Direct Link</span>
                 </a>
               )}
 
               <a
-                href={`/api/download?url=${encodeURIComponent(activeVideoUrl)}&title=${encodeURIComponent(title || 'video')}`}
+                href={`/api/download?url=${encodeURIComponent(activeVideoUrl || videoLinks[0].url)}&title=${encodeURIComponent(title)}`}
                 download
-                className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-500 rounded-xl font-bold text-white transition-all shadow-lg shadow-green-600/20"
+                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 rounded-xl font-bold text-xs sm:text-sm text-white transition-all shadow-lg shadow-emerald-600/25 active:scale-95 border border-emerald-400/30"
               >
-                <Download className="w-5 h-5" />
-                تحميل ({videoLinks[selectedQualityIdx]?.quality || 'الفيديو'})
+                <Download className="w-4 h-4" />
+                <span>
+                  {t('player_btn_download', 'Download').replace('{q}', videoLinks[selectedQualityIdx]?.quality || 'HD')}
+                </span>
               </a>
             </div>
           </div>

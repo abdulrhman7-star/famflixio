@@ -18,6 +18,7 @@ import { doc, setDoc, deleteDoc, getDocs, collection } from 'firebase/firestore'
 import { Play, Bookmark, Search as SearchIcon, Film, Trash2, ArrowLeft, X, Tv } from 'lucide-react';
 import { MediaItem, LangCode, ContinueWatchingItem } from '@/types';
 import { T, LANGUAGES } from '@/lib/i18n';
+import { useLanguage } from '@/lib/LanguageContext';
 import {
   buildPermalink,
   parsePermalink,
@@ -40,8 +41,8 @@ export interface FalakClientPageProps {
 }
 
 export default function FalakClientPage({ initialSearchParams }: FalakClientPageProps) {
-  // Language & Localization State (SSR-safe default 'ar')
-  const [lang, setLang] = useState<LangCode>('ar');
+  // Shared Language & Localization State
+  const { lang, setLang, dir } = useLanguage();
   const t = T[lang] || T.ar;
   const tmdbLang = LANGUAGES.find((l) => l.code === lang)?.tmdb || 'ar-SA';
 
@@ -324,21 +325,6 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
 
   // 1. Initial mount: safely restore client-side state
   useEffect(() => {
-    // 1a. Restore language preference from local storage
-    try {
-      const storedLang = localStorage.getItem('falak_lang') as LangCode;
-      if (storedLang && ['ar', 'en', 'fr', 'es', 'tr'].includes(storedLang)) {
-        queueMicrotask(() => {
-          setLang(storedLang);
-          document.documentElement.lang = storedLang;
-          const found = LANGUAGES.find((l) => l.code === storedLang);
-          document.documentElement.dir = found?.dir || (storedLang === 'ar' ? 'rtl' : 'ltr');
-        });
-      }
-    } catch (e) {
-      console.warn('Could not read stored language:', e);
-    }
-
     // 1b. Restore favorites from local storage
     try {
       const stored = localStorage.getItem(LOCAL_FAVORITES_KEY);

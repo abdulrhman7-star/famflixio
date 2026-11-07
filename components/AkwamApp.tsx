@@ -8,6 +8,7 @@ import {
   Film, 
   Tv, 
   ArrowRight, 
+  ArrowLeft,
   ExternalLink, 
   RefreshCw, 
   AlertCircle, 
@@ -17,7 +18,9 @@ import {
   Zap,
   Shield,
   Clock,
-  Trash2
+  Trash2,
+  Star,
+  Check
 } from 'lucide-react';
 import EmbedModal from './EmbedModal';
 import { 
@@ -27,6 +30,7 @@ import {
   clearWatchHistory, 
   removeFromWatchHistory 
 } from '@/lib/history';
+import { useLanguage } from '@/lib/LanguageContext';
 
 interface MediaItem {
   title: string;
@@ -41,18 +45,27 @@ interface VideoLink {
   url: string;
 }
 
-function formatRelativeTime(timestamp: number): string {
+function formatRelativeTime(timestamp: number, lang: string): string {
   const diffSec = Math.floor((Date.now() - timestamp) / 1000);
-  if (diffSec < 60) return 'منذ لحظات';
+  if (diffSec < 60) {
+    return lang === 'ar' ? 'منذ لحظات' : lang === 'fr' ? 'À l’instant' : lang === 'es' ? 'Hace un momento' : 'Just now';
+  }
   const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `منذ ${diffMin} دقيقة`;
+  if (diffMin < 60) {
+    return lang === 'ar' ? `منذ ${diffMin} دقيقة` : `${diffMin}m ago`;
+  }
   const diffHours = Math.floor(diffMin / 60);
-  if (diffHours < 24) return `منذ ${diffHours} ساعة`;
+  if (diffHours < 24) {
+    return lang === 'ar' ? `منذ ${diffHours} ساعة` : `${diffHours}h ago`;
+  }
   const diffDays = Math.floor(diffHours / 24);
-  return `منذ ${diffDays} يوم`;
+  return lang === 'ar' ? `منذ ${diffDays} يوم` : `${diffDays}d ago`;
 }
 
 export default function AkwamApp() {
+  const { lang, dir, t } = useLanguage();
+  const isRtl = dir === 'rtl';
+
   const [view, setView] = useState<'home' | 'search' | 'series' | 'watch'>('home');
   const [homeTab, setHomeTab] = useState<'all' | 'movies' | 'series' | 'history'>('all');
   const [query, setQuery] = useState('');
@@ -60,6 +73,13 @@ export default function AkwamApp() {
   const [movies, setMovies] = useState<MediaItem[]>([]);
   const [series, setSeries] = useState<MediaItem[]>([]);
   const watchHistory = useWatchHistory();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    queueMicrotask(() => {
+      setMounted(true);
+    });
+  }, []);
+  const effectiveHistory = mounted ? watchHistory : [];
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   
@@ -69,6 +89,7 @@ export default function AkwamApp() {
   const [selectedQualityIdx, setSelectedQualityIdx] = useState<number>(0);
   const [videoError, setVideoError] = useState(false);
   const [streamMode, setStreamMode] = useState<'direct' | 'proxy'>('direct');
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   
   // Embed Modal State
   const [isEmbedOpen, setIsEmbedOpen] = useState<boolean>(false);
@@ -77,22 +98,27 @@ export default function AkwamApp() {
 
   const videoRef = useRef<HTMLVideoElement>(null);
 
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
   const fetchHomeData = async () => {
     setLoading(true);
     setError('');
     try {
       const [moviesRes, seriesRes] = await Promise.all([
-        fetch('/api/movies?page=1').then(res => res.json()),
-        fetch('/api/series?page=1').then(res => res.json())
+        fetch('/api/movies?page=1').then((res) => res.json()),
+        fetch('/api/series?page=1').then((res) => res.json()),
       ]);
-      if (moviesRes.success) setMovies(moviesRes.data);
-      if (seriesRes.success) setSeries(seriesRes.data);
+      if (moviesRes.success) setMovies(moviesRes.data || []);
+      if (seriesRes.success) setSeries(seriesRes.data || []);
       if (!moviesRes.success && !seriesRes.success) {
-        setError(moviesRes.error || seriesRes.error || 'تعذر جلب البيانات');
+        setError(moviesRes.error || seriesRes.error || t('toast_data_error', 'Failed to fetch data'));
       }
     } catch (e: any) {
       console.error(e);
-      setError('حدث خطأ أثناء جلب البيانات من الخادم');
+      setError(t('toast_data_error', 'Error fetching data from server'));
     } finally {
       setLoading(false);
     }
@@ -105,8 +131,8 @@ export default function AkwamApp() {
         setLoading(true);
         try {
           const [moviesRes, seriesRes] = await Promise.all([
-            fetch('/api/movies?page=1').then(res => res.json()),
-            fetch('/api/series?page=1').then(res => res.json())
+            fetch('/api/movies?page=1').then((res) => res.json()),
+            fetch('/api/series?page=1').then((res) => res.json()),
           ]);
           if (!isCancelled) {
             if (moviesRes.success) setMovies(moviesRes.data || []);
@@ -114,7 +140,7 @@ export default function AkwamApp() {
           }
         } catch (e) {
           if (!isCancelled) {
-            setError('حدث خطأ أثناء جلب البيانات');
+            setError(t('toast_data_error', 'Error loading media catalog'));
           }
         } finally {
           if (!isCancelled) {
@@ -127,7 +153,7 @@ export default function AkwamApp() {
     return () => {
       isCancelled = true;
     };
-  }, [view, movies.length, series.length]);
+  }, [view, movies.length, series.length, t]);
 
   useEffect(() => {
     const onTabChange = (e: Event) => {
@@ -153,11 +179,11 @@ export default function AkwamApp() {
             if (data.success) {
               setResults(data.data || []);
             } else {
-              setError(data.error || 'لا توجد نتائج');
+              setError(data.error || t('no_results', 'No results found'));
             }
           })
           .catch(() => {
-            setError('فشل في جلب نتائج البحث');
+            setError(t('toast_data_error', 'Search failed'));
           })
           .finally(() => {
             setLoading(false);
@@ -172,7 +198,7 @@ export default function AkwamApp() {
       window.removeEventListener('nav-tab-change', onTabChange);
       window.removeEventListener('nav-search', onNavSearch);
     };
-  }, []);
+  }, [t]);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -188,10 +214,10 @@ export default function AkwamApp() {
       if (data.success) {
         setResults(data.data || []);
       } else {
-        setError(data.error || 'لا توجد نتائج');
+        setError(data.error || t('no_results', 'No results found'));
       }
     } catch (e) {
-      setError('فشل البحث في الخادم');
+      setError(t('toast_data_error', 'Search request failed'));
     } finally {
       setLoading(false);
     }
@@ -211,19 +237,19 @@ export default function AkwamApp() {
         if (data.success && Array.isArray(data.data) && data.data.length > 0) {
           setEpisodes(data.data);
         } else {
-          setError(data.error || 'لم يتم العثور على حلقات لهذا المسلسل');
+          setError(data.error || t('overview_unavailable', 'Episodes unavailable'));
         }
       } catch (e) {
-        setError('فشل في جلب الحلقات');
+        setError(t('toast_data_error', 'Failed to retrieve series episodes'));
       } finally {
         setLoading(false);
       }
     } else {
-      // فيلم
+      // Movie
       addToWatchHistory({
         title: item.title,
         url: item.url,
-        image: item.image
+        image: item.image,
       });
       fetchVideoLinks(item.url);
     }
@@ -246,14 +272,14 @@ export default function AkwamApp() {
           addToWatchHistory({
             title: currentMedia.title,
             url: currentMedia.url,
-            image: currentMedia.image
+            image: currentMedia.image,
           });
         }
       } else {
-        setError(data.error || 'تعذر جلب روابط المشاهدة');
+        setError(data.error || t('player_error_proxy', 'Unable to extract stream link'));
       }
     } catch (e) {
-      setError('حدث خطأ أثناء استخراج روابط المشاهدة');
+      setError(t('toast_data_error', 'Error extracting stream links'));
     } finally {
       setLoading(false);
     }
@@ -268,7 +294,10 @@ export default function AkwamApp() {
     setVideoError(false);
 
     if (videoRef.current) {
-      videoRef.current.src = `/api/stream?url=${encodeURIComponent(videoLinks[idx].url)}`;
+      const targetUrl = streamMode === 'direct' 
+        ? videoLinks[idx].url 
+        : `/api/stream?url=${encodeURIComponent(videoLinks[idx].url)}`;
+      videoRef.current.src = targetUrl;
       videoRef.current.currentTime = currentTime;
       if (!isPaused) {
         videoRef.current.play().catch(() => {});
@@ -276,56 +305,82 @@ export default function AkwamApp() {
     }
   };
 
+  const handleShare = (title: string, url: string) => {
+    const fullShareUrl = typeof window !== 'undefined' 
+      ? `${window.location.origin}/watch?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}`
+      : url;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(fullShareUrl);
+      showToast(t('toast_link_copied', 'Link copied!'));
+    }
+  };
+
+  // Luxury Media Card Component
   const MediaCard = ({ item }: { item: MediaItem }) => (
     <div 
       id={`media-card-${encodeURIComponent(item.url)}`}
-      className="group bg-gray-800/90 hover:bg-gray-800 border border-gray-700/50 hover:border-blue-500/80 rounded-xl overflow-hidden shadow-lg cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-blue-500/10 flex flex-col"
+      className="group glass-card rounded-2xl overflow-hidden cursor-pointer flex flex-col relative select-none border border-white/[0.07] hover:border-blue-400/50 transition-all duration-300 hover:-translate-y-1.5 hover:shadow-2xl hover:shadow-blue-500/10"
       onClick={() => handleMediaClick(item)}
     >
-      <div className="relative aspect-[2/3] w-full bg-gray-900 overflow-hidden">
+      <div className="relative aspect-[2/3] w-full bg-slate-900/90 overflow-hidden">
         {item.image ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img 
             src={item.image} 
             alt={item.title} 
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" 
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out" 
             referrerPolicy="no-referrer"
             loading="lazy"
             onError={(e) => {
-              // Fallback placeholder if image load fails
               e.currentTarget.style.display = 'none';
             }}
           />
         ) : (
-          <div className="w-full h-full bg-gray-800 flex items-center justify-center">
-            <Film className="w-10 h-10 text-gray-600" />
+          <div className="w-full h-full bg-slate-800/80 flex items-center justify-center">
+            <Film className="w-10 h-10 text-slate-600" />
           </div>
         )}
         
-        <div className="absolute inset-0 bg-gradient-to-t from-gray-950/90 via-transparent to-transparent opacity-60 group-hover:opacity-30 transition-opacity" />
+        {/* Soft Vignette Overlay */}
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent opacity-80 group-hover:opacity-40 transition-opacity duration-300" />
 
+        {/* Quality Badge */}
         {item.quality && (
-          <div className="absolute top-2 right-2 bg-blue-600/90 backdrop-blur-sm text-white text-[11px] px-2 py-0.5 rounded-md font-bold shadow-md">
+          <div className={`absolute top-2.5 ${isRtl ? 'right-2.5' : 'left-2.5'} bg-blue-600/90 backdrop-blur-md text-white text-[10px] font-extrabold px-2 py-0.5 rounded-md shadow-md border border-blue-400/30 uppercase tracking-wider`}>
             {item.quality}
           </div>
         )}
+
+        {/* Star Rating */}
         {item.rating && (
-          <div className="absolute bottom-2 left-2 bg-gray-950/80 backdrop-blur-sm text-yellow-400 text-xs px-2 py-0.5 rounded-md font-bold flex items-center gap-1 shadow-md">
-            <span>★</span>
-            <span>{item.rating}</span>
+          <div className={`absolute bottom-2.5 ${isRtl ? 'left-2.5' : 'right-2.5'} bg-black/70 backdrop-blur-md text-amber-400 text-xs px-2 py-0.5 rounded-lg font-bold flex items-center gap-1 shadow-md border border-white/10`}>
+            <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+            <span className="text-[11px] tabular-nums font-mono text-white">{item.rating}</span>
           </div>
         )}
         
-        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40">
-          <div className="w-12 h-12 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-lg transform scale-75 group-hover:scale-100 transition-transform">
-            <Play className="w-6 h-6 fill-white ml-0.5" />
+        {/* Play Action Hover Reveal */}
+        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 bg-slate-950/40 backdrop-blur-[2px]">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 text-white flex items-center justify-center shadow-xl shadow-blue-500/40 transform scale-75 group-hover:scale-100 transition-all duration-300 border border-white/20">
+            <Play className={`w-5 h-5 fill-white text-white ${isRtl ? 'mr-0.5' : 'ml-0.5'}`} />
           </div>
         </div>
       </div>
-      <div className="p-3 flex-1 flex items-center">
-        <h3 className="text-sm font-medium text-gray-200 group-hover:text-blue-400 line-clamp-2 transition-colors" title={item.title}>
+
+      <div className="p-3.5 flex-1 flex flex-col justify-between">
+        <h3 
+          className="text-xs sm:text-sm font-semibold text-slate-200 group-hover:text-blue-300 line-clamp-2 transition-colors duration-200 leading-snug" 
+          title={item.title}
+        >
           {item.title}
         </h3>
+        <div className="mt-2 pt-2 border-t border-white/[0.06] flex items-center justify-between text-[11px] text-slate-400">
+          <span className="text-blue-400/90 font-medium group-hover:underline flex items-center gap-1">
+            <Play className="w-2.5 h-2.5 fill-current" />
+            <span>{t('card_watch_now', 'Watch Now')}</span>
+          </span>
+          <span className="text-[10px] text-slate-500 font-mono">1080p</span>
+        </div>
       </div>
     </div>
   );
@@ -333,96 +388,138 @@ export default function AkwamApp() {
   const activeVideoUrl = videoLinks[selectedQualityIdx]?.url;
 
   return (
-    <div className="max-w-7xl mx-auto p-4 md:p-6 lg:p-8 min-h-screen">
-      {/* Header */}
-      <header className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 border-b border-gray-800 pb-6">
-        <div 
-          id="app-logo-btn"
-          className="text-2xl font-black text-blue-500 cursor-pointer flex items-center gap-2 select-none"
-          onClick={() => { setView('home'); setQuery(''); setError(''); }}
-        >
-          <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
-            <Play className="w-5 h-5 fill-white text-white ml-0.5" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-xl tracking-tight text-white font-extrabold">Fam<span className="text-blue-500">Flix</span></span>
-            <span className="text-[11px] text-gray-400 font-normal">مشاهدة وتحميل بدون إعلانات</span>
-          </div>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-10 min-h-screen" dir={dir}>
+      
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 glass-dropdown px-4 py-3 rounded-2xl text-white text-xs font-semibold shadow-2xl border border-white/10 animate-in fade-in slide-in-from-bottom-2 duration-200 flex items-center gap-2">
+          <Check className="w-4 h-4 text-emerald-400" />
+          <span>{toastMessage}</span>
         </div>
-        
-        <form onSubmit={handleSearch} className="w-full md:w-1/2 max-w-xl flex shadow-xl shadow-black/20">
-          <input 
-            id="search-input"
-            type="text" 
-            placeholder="ابحث عن فيلم أو مسلسل..."
-            className="flex-1 bg-gray-800/90 border border-gray-700 border-l-0 rounded-r-xl px-5 py-3 text-white placeholder-gray-400 focus:border-blue-500 focus:bg-gray-800 outline-none transition-all"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <button 
-            id="search-submit-btn"
-            type="submit" 
-            className="bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-l-xl transition-colors flex items-center justify-center font-medium gap-2 text-white"
-          >
-            <Search className="w-5 h-5" />
-            <span className="hidden sm:inline">بحث</span>
-          </button>
-        </form>
-      </header>
+      )}
+
+      {/* Hero Showcase (rendered on home view) */}
+      {view === 'home' && (
+        <section className="relative rounded-3xl overflow-hidden glass-panel p-6 sm:p-10 md:p-12 mb-10 md:mb-14 border border-white/10 shadow-2xl">
+          {/* Subtle Accent Glows */}
+          <div className="absolute -top-24 -right-24 w-80 h-80 rounded-full bg-blue-600/15 blur-3xl pointer-events-none" />
+          <div className="absolute -bottom-24 -left-24 w-80 h-80 rounded-full bg-purple-600/15 blur-3xl pointer-events-none" />
+
+          <div className="relative z-10 max-w-3xl">
+            {/* Header Badge */}
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs font-semibold mb-5 shadow-sm">
+              <Sparkles className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
+              <span>{t('hero_badge', 'Luxury Cinema Streaming — Free & Unlimited')}</span>
+            </div>
+
+            {/* Headline */}
+            <h1 className="text-3xl sm:text-4xl md:text-5xl font-black text-white tracking-tight leading-tight mb-4 text-balance">
+              {t('hero_title_1', 'Experience World Cinema')}{' '}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-300 to-purple-400">
+                {t('hero_title_2', 'In Ultra HD Without Limits')}
+              </span>
+            </h1>
+
+            {/* Subheading */}
+            <p className="text-sm sm:text-base text-slate-300 leading-relaxed mb-8 max-w-2xl font-normal">
+              {t('hero_desc', 'Explore thousands of global movies and exclusive TV shows with high-speed direct servers, adaptive multi-resolution playback, and synced subtitles.')}
+            </p>
+
+            {/* Hero Quick Search Bar */}
+            <form onSubmit={handleSearch} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 max-w-xl mb-8">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  placeholder={t('search_placeholder', 'Search movies or series...')}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  className="w-full glass-input rounded-2xl px-5 py-3.5 text-sm text-white placeholder-slate-400 outline-none focus:border-blue-400/80 shadow-inner"
+                />
+                <Search className={`absolute ${isRtl ? 'left-4' : 'right-4'} top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400`} />
+              </div>
+              <button
+                type="submit"
+                className="px-6 py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-500 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-sm transition-all shadow-lg shadow-blue-600/30 active:scale-95 flex items-center justify-center gap-2 shrink-0 border border-blue-400/30"
+              >
+                <Search className="w-4 h-4" />
+                <span>{t('search_btn', 'Search')}</span>
+              </button>
+            </form>
+
+            {/* Clean Value Propositions (No static pills) */}
+            <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400 font-medium">
+              <span className="flex items-center gap-1.5 text-slate-300">
+                <Film className="w-3.5 h-3.5 text-blue-400" />
+                <span>{t('hero_stat_movies', '10,000+ Titles')}</span>
+              </span>
+              <span aria-hidden="true" className="text-slate-600">·</span>
+              <span className="flex items-center gap-1.5 text-slate-300">
+                <Zap className="w-3.5 h-3.5 text-amber-400" />
+                <span>{t('hero_stat_quality', 'Up to 4K / 1080p')}</span>
+              </span>
+              <span aria-hidden="true" className="text-slate-600">·</span>
+              <span className="flex items-center gap-1.5 text-slate-300">
+                <Shield className="w-3.5 h-3.5 text-emerald-400" />
+                <span>{t('hero_stat_speed', 'Zero-Latency Direct Stream')}</span>
+              </span>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Tabs navigation in Home */}
       {view === 'home' && (
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-8 border-b border-gray-800 pb-4">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-8 pb-4 border-b border-white/[0.08]">
+          <div className="flex items-center gap-1.5 p-1 glass-panel rounded-2xl border border-white/10 shadow-sm">
             <button
               id="tab-all"
               onClick={() => setHomeTab('all')}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 cursor-pointer ${
                 homeTab === 'all' 
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' 
-                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30' 
+                  : 'text-slate-300 hover:text-white hover:bg-white/5'
               }`}
             >
-              الكل
+              {t('tab_all', 'All')}
             </button>
             <button
               id="tab-movies"
               onClick={() => setHomeTab('movies')}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 ${
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
                 homeTab === 'movies' 
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' 
-                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30' 
+                  : 'text-slate-300 hover:text-white hover:bg-white/5'
               }`}
             >
-              <Film className="w-4 h-4" />
-              الأفلام
+              <Film className="w-3.5 h-3.5 text-blue-400" />
+              <span>{t('tab_movies', 'Movies')}</span>
             </button>
             <button
               id="tab-series"
               onClick={() => setHomeTab('series')}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 ${
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
                 homeTab === 'series' 
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' 
-                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white'
+                  ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30' 
+                  : 'text-slate-300 hover:text-white hover:bg-white/5'
               }`}
             >
-              <Tv className="w-4 h-4" />
-              المسلسلات
+              <Tv className="w-3.5 h-3.5 text-purple-400" />
+              <span>{t('tab_series', 'TV Series')}</span>
             </button>
-            {watchHistory.length > 0 && (
+            {effectiveHistory.length > 0 && (
               <button
                 id="tab-history"
                 onClick={() => setHomeTab('history')}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-1.5 ${
+                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 flex items-center gap-2 cursor-pointer ${
                   homeTab === 'history' 
-                    ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' 
-                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white'
+                    ? 'bg-cyan-600 text-white shadow-md shadow-cyan-600/30' 
+                    : 'text-slate-300 hover:text-white hover:bg-white/5'
                 }`}
               >
-                <Clock className="w-4 h-4 text-cyan-400" />
-                <span>سجل المشاهدة</span>
-                <span className="text-[11px] bg-black/40 px-2 py-0.5 rounded-full font-mono font-bold text-blue-200">
-                  {watchHistory.length}
+                <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                <span>{t('tab_history', 'Watch History')}</span>
+                <span className="text-[10px] bg-black/40 px-2 py-0.5 rounded-full font-mono font-bold text-cyan-200 tabular-nums">
+                  {effectiveHistory.length}
                 </span>
               </button>
             )}
@@ -433,13 +530,13 @@ export default function AkwamApp() {
             id="open-embed-generator-btn"
             onClick={() => {
               setEmbedVideoUrl(movies[0]?.url || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4');
-              setEmbedTitle('فيديو متجاوب جاهز للتضمين');
+              setEmbedTitle('FamFlix Embed Player');
               setIsEmbedOpen(true);
             }}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600/80 to-purple-600/80 hover:from-blue-600 hover:to-purple-600 text-white rounded-lg text-xs md:text-sm font-bold transition-all shadow-md shadow-purple-500/10 border border-purple-500/30"
+            className="flex items-center gap-2 px-4 py-2.5 glass-card hover:border-blue-400/40 rounded-xl text-xs sm:text-sm font-bold text-slate-200 hover:text-white transition-all shadow-md active:scale-95"
           >
-            <Code2 className="w-4 h-4 text-cyan-300" />
-            <span>كود التضمين (Embed Iframe)</span>
+            <Code2 className="w-4 h-4 text-blue-400" />
+            <span>{t('nav_embed', 'Embed Code')}</span>
           </button>
         </div>
       )}
@@ -447,15 +544,15 @@ export default function AkwamApp() {
       {/* Error & Loading States */}
       {loading && (
         <div className="flex flex-col justify-center items-center py-24 gap-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent shadow-lg shadow-blue-500/20"></div>
-          <p className="text-gray-400 text-sm">جاري تحميل المحتوى من المصدر...</p>
+          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin shadow-lg shadow-blue-500/30"></div>
+          <p className="text-slate-400 text-sm font-medium animate-pulse">{t('player_loading', 'Loading cinema content...')}</p>
         </div>
       )}
       
       {error && !loading && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-300 p-5 rounded-xl text-center font-medium my-6 flex flex-col items-center gap-3 max-w-lg mx-auto">
-          <AlertCircle className="w-8 h-8 text-red-400" />
-          <p>{error}</p>
+        <div className="glass-panel border-red-500/30 text-red-300 p-6 rounded-2xl text-center font-medium my-8 flex flex-col items-center gap-3 max-w-lg mx-auto shadow-2xl">
+          <AlertCircle className="w-9 h-9 text-red-400" />
+          <p className="text-sm">{error}</p>
           <button
             onClick={() => {
               if (view === 'home') fetchHomeData();
@@ -463,52 +560,54 @@ export default function AkwamApp() {
               else if (view === 'watch' && currentMedia) fetchVideoLinks(currentMedia.url);
               else if (view === 'series' && currentMedia) handleMediaClick(currentMedia);
             }}
-            className="flex items-center gap-2 px-4 py-2 bg-red-600/30 hover:bg-red-600/50 text-red-200 rounded-lg text-sm transition-colors mt-2"
+            className="flex items-center gap-2 px-5 py-2.5 bg-red-600/30 hover:bg-red-600/50 text-red-200 rounded-xl text-xs font-bold transition-colors mt-2 border border-red-500/30"
           >
             <RefreshCw className="w-4 h-4" />
-            إعادة المحاولة
+            <span>{t('player_retry', 'Retry')}</span>
           </button>
         </div>
       )}
 
       {/* Main Home Content */}
       {!loading && view === 'home' && (
-        <div className="space-y-12 animate-in fade-in duration-300">
+        <div className="space-y-14 animate-in fade-in duration-300">
           
           {/* Watch History Section */}
-          {(homeTab === 'all' || homeTab === 'history') && watchHistory.length > 0 && (
-            <section id="watch-history-section" className="bg-gradient-to-b from-gray-800/40 to-transparent p-5 rounded-2xl border border-gray-800/80">
-              <div className="flex flex-wrap items-center justify-between mb-5 gap-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 bg-blue-500/10 rounded-xl text-blue-400">
+          {(homeTab === 'all' || homeTab === 'history') && effectiveHistory.length > 0 && (
+            <section id="watch-history-section" className="glass-panel p-6 sm:p-8 rounded-3xl border border-white/[0.08] shadow-2xl">
+              <div className="flex flex-wrap items-center justify-between mb-6 gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-cyan-500/10 rounded-2xl text-cyan-400 border border-cyan-500/20">
                     <Clock className="w-5 h-5" />
                   </div>
                   <div>
-                    <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
-                      <span>المشاهدة مؤخراً</span>
-                      <span className="text-xs bg-blue-500/20 text-blue-300 px-2.5 py-0.5 rounded-full font-bold border border-blue-500/30">
-                        {watchHistory.length}
+                    <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2.5">
+                      <span>{t('history_title', 'Your Watch History')}</span>
+                      <span className="text-xs bg-cyan-500/20 text-cyan-300 px-2.5 py-0.5 rounded-full font-bold border border-cyan-500/30 tabular-nums font-mono">
+                        {effectiveHistory.length}
                       </span>
                     </h2>
-                    <p className="text-xs text-gray-400 mt-0.5">آخر مقاطع الفيديو التي شاهدتها محفوظة على جهازك لسرعة الاستئناف</p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {t('history_empty_desc', 'Movies and episodes you stream will automatically appear here.')}
+                    </p>
                   </div>
                 </div>
 
                 <button
                   onClick={clearWatchHistory}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gray-800/80 hover:bg-red-600/20 hover:text-red-400 text-gray-400 rounded-xl text-xs font-semibold border border-gray-700/60 transition-all cursor-pointer"
-                  title="مسح كافة عناصر سجل المشاهدة"
+                  className="flex items-center gap-1.5 px-3.5 py-2 glass-card hover:bg-red-600/20 hover:text-red-400 text-slate-400 rounded-xl text-xs font-semibold transition-all border border-white/5 cursor-pointer active:scale-95"
+                  title={t('history_clear', 'Clear History')}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  <span>مسح السجل</span>
+                  <span>{t('history_clear', 'Clear History')}</span>
                 </button>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                {watchHistory.map((item, i) => (
+                {effectiveHistory.map((item, i) => (
                   <div
                     key={`history-${item.url}-${i}`}
-                    className="bg-gray-800/90 hover:bg-gray-800 border border-gray-700/60 hover:border-blue-500/60 rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-1 shadow-md hover:shadow-xl group relative flex flex-col cursor-pointer"
+                    className="glass-card rounded-2xl overflow-hidden transition-all duration-200 hover:-translate-y-1 shadow-md hover:shadow-xl group relative flex flex-col cursor-pointer border border-white/[0.06] hover:border-cyan-400/40"
                     onClick={() => {
                       handleMediaClick({
                         title: item.title,
@@ -517,7 +616,7 @@ export default function AkwamApp() {
                       });
                     }}
                   >
-                    <div className="relative aspect-video bg-gray-900 overflow-hidden">
+                    <div className="relative aspect-video bg-slate-900 overflow-hidden">
                       {item.image ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
@@ -527,14 +626,14 @@ export default function AkwamApp() {
                           referrerPolicy="no-referrer"
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-gray-900 text-gray-600">
+                        <div className="w-full h-full flex items-center justify-center bg-slate-900 text-slate-600">
                           <Film className="w-8 h-8" />
                         </div>
                       )}
 
                       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                         <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition-transform">
-                          <Play className="w-5 h-5 fill-white ml-0.5" />
+                          <Play className={`w-4 h-4 fill-white ${isRtl ? 'mr-0.5' : 'ml-0.5'}`} />
                         </div>
                       </div>
 
@@ -543,25 +642,26 @@ export default function AkwamApp() {
                         onClick={(e) => {
                           e.stopPropagation();
                           removeFromWatchHistory(item.url);
+                          showToast(t('history_removed', 'Removed from history'));
                         }}
-                        className="absolute top-2 left-2 p-1.5 bg-black/70 hover:bg-red-600 text-gray-300 hover:text-white rounded-lg transition-colors opacity-0 group-hover:opacity-100 shadow-md"
-                        title="حذف من السجل"
+                        className={`absolute top-2 ${isRtl ? 'left-2' : 'right-2'} p-1.5 bg-black/70 hover:bg-red-600 text-slate-300 hover:text-white rounded-lg transition-colors opacity-0 group-hover:opacity-100 shadow-md`}
+                        title={t('remove_from_history', 'Remove')}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
 
                     <div className="p-3 flex-1 flex flex-col justify-between">
-                      <h3 className="text-xs font-semibold text-gray-200 group-hover:text-blue-400 line-clamp-2 transition-colors mb-2" title={item.title}>
+                      <h3 className="text-xs font-semibold text-slate-200 group-hover:text-cyan-300 line-clamp-2 transition-colors mb-2" title={item.title}>
                         {item.title}
                       </h3>
-                      <div className="flex items-center justify-between text-[11px] text-gray-400 mt-auto pt-2 border-t border-gray-700/50">
-                        <span className="flex items-center gap-1 text-blue-400 font-medium">
+                      <div className="flex items-center justify-between text-[11px] text-slate-400 mt-auto pt-2 border-t border-white/[0.06]">
+                        <span className="flex items-center gap-1 text-cyan-400 font-medium">
                           <Play className="w-3 h-3 fill-current" />
-                          <span>استئناف</span>
+                          <span>{t('history_continue', 'Continue')}</span>
                         </span>
-                        <span className="text-[10px] text-gray-400 font-medium">
-                          {formatRelativeTime(item.watchedAt)}
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          {formatRelativeTime(item.watchedAt, lang)}
                         </span>
                       </div>
                     </div>
@@ -571,267 +671,316 @@ export default function AkwamApp() {
             </section>
           )}
 
-          {/* Empty History State when user explicitly filters by history */}
-          {homeTab === 'history' && watchHistory.length === 0 && (
-            <div className="text-center py-16 bg-gray-800/40 border border-gray-800 rounded-2xl">
-              <Clock className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-              <h3 className="text-lg font-bold text-gray-200 mb-1">سجل المشاهدة فارغ</h3>
-              <p className="text-sm text-gray-400 max-w-md mx-auto">
-                لم تقم بمشاهدة أي مقاطع فيديو بعد. عند بدء مشاهدة أي فيلم أو مسلسل، سيتم حفظ آخر 10 مقاطع هنا تلقائياً لسرعة الوصول إليها.
+          {/* Empty History State */}
+          {homeTab === 'history' && mounted && effectiveHistory.length === 0 && (
+            <div className="text-center py-20 glass-panel border border-white/10 rounded-3xl p-8">
+              <Clock className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+              <h3 className="text-lg font-bold text-slate-200 mb-1">{t('history_empty_title', 'Your Watch History is Empty')}</h3>
+              <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto mb-5">
+                {t('history_empty_desc', 'Movies and episodes you stream will automatically appear here.')}
               </p>
               <button
                 onClick={() => setHomeTab('all')}
-                className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all"
+                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/30 active:scale-95"
               >
-                تصفح الأفلام والمسلسلات
+                {t('btn_browse', 'Browse Catalog')}
               </button>
             </div>
           )}
 
+          {/* Latest Movies Section */}
           {(homeTab === 'all' || homeTab === 'movies') && (
             <section id="movies-section">
               <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-blue-500/10 rounded-2xl text-blue-400 border border-blue-500/20">
                     <Film className="w-5 h-5" />
                   </div>
-                  <h2 className="text-xl md:text-2xl font-bold text-white">أحدث الأفلام</h2>
+                  <div>
+                    <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+                      {t('section_movies_title', 'Latest Added Movies')}
+                    </h2>
+                    <p className="text-xs text-slate-400 hidden sm:block">
+                      {t('section_movies_desc', 'Freshly released blockbusters ready for instant stream')}
+                    </p>
+                  </div>
                 </div>
               </div>
               {movies.length > 0 ? (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
                   {movies.map((m, i) => <MediaCard key={`movie-${i}`} item={m} />)}
                 </div>
               ) : (
-                <p className="text-gray-400 text-center py-8">لا توجد أفلام معروضة حالياً.</p>
+                <p className="text-slate-400 text-center py-12 glass-panel rounded-2xl">{t('no_results', 'No movies available.')}</p>
               )}
             </section>
           )}
 
+          {/* Latest Series Section */}
           {(homeTab === 'all' || homeTab === 'series') && (
             <section id="series-section">
               <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 bg-purple-500/10 rounded-lg text-purple-400">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-purple-500/10 rounded-2xl text-purple-400 border border-purple-500/20">
                     <Tv className="w-5 h-5" />
                   </div>
-                  <h2 className="text-xl md:text-2xl font-bold text-white">أحدث المسلسلات</h2>
+                  <div>
+                    <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+                      {t('section_series_title', 'Latest TV Shows')}
+                    </h2>
+                    <p className="text-xs text-slate-400 hidden sm:block">
+                      {t('section_series_desc', 'Full seasons and episodes in pristine high definition')}
+                    </p>
+                  </div>
                 </div>
               </div>
               {series.length > 0 ? (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
                   {series.map((s, i) => <MediaCard key={`series-${i}`} item={s} />)}
                 </div>
               ) : (
-                <p className="text-gray-400 text-center py-8">لا توجد مسلسلات معروضة حالياً.</p>
+                <p className="text-slate-400 text-center py-12 glass-panel rounded-2xl">{t('no_results', 'No series available.')}</p>
               )}
             </section>
           )}
         </div>
       )}
 
-      {/* Search Results */}
+      {/* Search Results View */}
       {!loading && view === 'search' && (
         <div className="animate-in fade-in duration-300">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl md:text-2xl font-bold">
-              نتائج البحث عن: <span className="text-blue-400">{query}</span>
-            </h2>
+          <div className="flex items-center justify-between mb-8 pb-4 border-b border-white/10">
+            <div>
+              <h2 className="text-xl sm:text-2xl font-bold text-white">
+                {t('section_search_results', 'Search results for:')} <span className="text-blue-400">&ldquo;{query}&rdquo;</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                {results.length} {t('section_results_count', 'titles found')}
+              </p>
+            </div>
             <button 
               onClick={() => { setView('home'); setQuery(''); }} 
-              className="text-sm text-gray-400 hover:text-white flex items-center gap-1.5 bg-gray-800 px-3 py-1.5 rounded-lg transition-colors"
+              className="text-xs sm:text-sm text-slate-300 hover:text-white flex items-center gap-2 glass-card px-4 py-2 rounded-xl transition-all border border-white/10 active:scale-95"
             >
-              <ArrowRight className="w-4 h-4" />
-              الرئيسية
+              {isRtl ? <ArrowRight className="w-4 h-4" /> : <ArrowLeft className="w-4 h-4" />}
+              <span>{t('nav_home', 'Home')}</span>
             </button>
           </div>
           {results.length > 0 ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
               {results.map((r, i) => <MediaCard key={`search-${i}`} item={r} />)}
             </div>
           ) : (
-            <div className="text-center py-16 bg-gray-800/40 border border-gray-800 rounded-2xl">
-              <Film className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-              <p className="text-gray-400 font-medium">لم يتم العثور على نتائج تطابق بحثك.</p>
+            <div className="text-center py-20 glass-panel border border-white/10 rounded-3xl p-8">
+              <Film className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+              <p className="text-slate-300 font-medium text-base mb-1">{t('no_results', 'No results match your search.')}</p>
+              <p className="text-slate-500 text-xs">{t('search_hint', 'Try searching for other titles or keywords.')}</p>
             </div>
           )}
         </div>
       )}
 
-      {/* Series Episodes List */}
+      {/* Series Episodes List View */}
       {!loading && view === 'series' && currentMedia && (
         <div className="animate-in fade-in duration-300">
           <button 
             id="back-to-home-btn"
             onClick={() => setView('home')} 
-            className="flex items-center gap-2 text-gray-400 hover:text-white mb-6 bg-gray-800/80 hover:bg-gray-800 px-4 py-2 rounded-xl transition-colors border border-gray-700/50"
+            className="flex items-center gap-2 text-slate-300 hover:text-white mb-6 glass-card px-4 py-2.5 rounded-xl transition-all border border-white/10 active:scale-95 text-xs sm:text-sm font-semibold"
           >
-            <ArrowRight className="w-4 h-4" /> عودة للقائمة
+            {isRtl ? <ArrowRight className="w-4 h-4" /> : <ArrowLeft className="w-4 h-4" />}
+            <span>{t('btn_back_catalog', 'Back to Catalog')}</span>
           </button>
           
-          <div className="bg-gray-800/60 border border-gray-700/50 rounded-2xl p-6 mb-8 flex flex-col md:flex-row gap-6 items-center md:items-start">
+          <div className="glass-panel border border-white/10 rounded-3xl p-6 sm:p-8 mb-10 flex flex-col md:flex-row gap-6 sm:gap-8 items-center md:items-start shadow-2xl">
             {currentMedia.image && (
               // eslint-disable-next-line @next/next/no-img-element
               <img 
                 src={currentMedia.image} 
                 alt={currentMedia.title} 
-                className="w-44 md:w-52 rounded-xl shadow-xl border border-gray-700" 
+                className="w-44 md:w-56 rounded-2xl shadow-2xl border border-white/10 object-cover aspect-[2/3]" 
                 referrerPolicy="no-referrer" 
               />
             )}
-            <div className="flex-1 text-center md:text-right">
-              <div className="inline-flex items-center gap-2 px-3 py-1 bg-purple-500/20 text-purple-300 rounded-lg text-xs font-bold mb-3">
+            <div className="flex-1 text-center md:text-start">
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-purple-500/20 text-purple-300 rounded-lg text-xs font-bold mb-3 border border-purple-500/30">
                 <Tv className="w-3.5 h-3.5" />
-                مسلسل
+                <span>{t('badge_tv', 'TV Series')}</span>
               </div>
-              <h1 className="text-2xl md:text-3xl font-extrabold text-white mb-3">{currentMedia.title}</h1>
-              <p className="text-gray-400 text-sm md:text-base leading-relaxed">
-                اختر الحلقة المطلوبة للمشاهدة المباشرة بدون إعلانات أو التحميل بأعلى جودة متوفرة.
+              <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-white mb-3 tracking-tight">
+                {currentMedia.title}
+              </h1>
+              <p className="text-slate-300 text-sm md:text-base leading-relaxed mb-6">
+                {t('section_series_desc', 'Full seasons and episodes in pristine high definition with flexible bitrates')}
               </p>
+              <div className="flex flex-wrap items-center justify-center md:justify-start gap-3">
+                <button
+                  onClick={() => handleShare(currentMedia.title, currentMedia.url)}
+                  className="flex items-center gap-2 px-4 py-2 glass-card hover:border-purple-400/40 text-slate-200 hover:text-white rounded-xl text-xs font-semibold transition-all border border-white/10 active:scale-95"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>{t('btn_share', 'Share')}</span>
+                </button>
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
-              <span>قائمة الحلقات</span>
-              <span className="text-xs bg-gray-800 text-gray-400 px-2.5 py-0.5 rounded-full border border-gray-700">{episodes.length} حلقة</span>
+          <div className="flex items-center justify-between mb-6 pb-2 border-b border-white/10">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2.5">
+              <span>{t('player_episodes_list', 'Episodes List:')}</span>
+              <span className="text-xs bg-white/10 text-slate-300 px-3 py-0.5 rounded-full border border-white/10 font-mono tabular-nums">
+                {episodes.length}
+              </span>
             </h2>
           </div>
 
           {episodes.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
               {episodes.map((ep, i) => (
                 <div 
                   key={`ep-${i}`} 
                   id={`episode-item-${i}`}
-                  className="bg-gray-800/80 hover:bg-blue-600/20 border border-gray-700/60 hover:border-blue-500/60 p-4 rounded-xl flex justify-between items-center cursor-pointer transition-all group"
+                  className="glass-card hover:border-blue-400/50 p-4 rounded-2xl flex justify-between items-center cursor-pointer transition-all duration-200 group active:scale-[0.99]"
                   onClick={() => {
                     const fullTitle = `${currentMedia.title} - ${ep.title}`;
                     setCurrentMedia({
                       ...currentMedia,
                       title: fullTitle,
-                      url: ep.url
+                      url: ep.url,
                     });
                     addToWatchHistory({
                       title: fullTitle,
                       url: ep.url,
-                      image: currentMedia.image
+                      image: currentMedia.image,
                     });
                     fetchVideoLinks(ep.url);
                   }}
                 >
-                  <span className="font-semibold text-sm text-gray-200 group-hover:text-white truncate">{ep.title}</span>
-                  <div className="w-8 h-8 rounded-lg bg-gray-700/80 group-hover:bg-blue-600 flex items-center justify-center transition-colors shrink-0 mr-2">
-                    <Play className="w-4 h-4 text-gray-300 group-hover:text-white fill-current ml-0.5" />
+                  <span className="font-semibold text-xs sm:text-sm text-slate-200 group-hover:text-blue-300 truncate">
+                    {ep.title}
+                  </span>
+                  <div className="w-8 h-8 rounded-xl bg-blue-600/20 text-blue-400 group-hover:bg-blue-600 group-hover:text-white flex items-center justify-center transition-all shrink-0 border border-blue-400/20">
+                    <Play className={`w-3.5 h-3.5 fill-current ${isRtl ? 'mr-0.5' : 'ml-0.5'}`} />
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="text-center py-12 bg-gray-800/40 rounded-xl border border-gray-800">
-              <p className="text-gray-400">لا توجد حلقات متاحة لهذا المسلسل حالياً.</p>
+            <div className="text-center py-12 glass-panel rounded-2xl border border-white/10">
+              <p className="text-slate-400 text-sm">{t('overview_unavailable', 'No episodes currently available.')}</p>
             </div>
           )}
         </div>
       )}
 
-      {/* Watch & Stream View */}
+      {/* Watch & Stream Player View */}
       {!loading && view === 'watch' && currentMedia && (
         <div className="animate-in fade-in duration-300 max-w-5xl mx-auto">
-          <button 
-            id="watch-back-btn"
-            onClick={() => currentMedia.url.includes('series') || episodes.length > 0 ? setView('series') : setView('home')} 
-            className="flex items-center gap-2 text-gray-400 hover:text-white mb-6 bg-gray-800/80 hover:bg-gray-800 px-4 py-2 rounded-xl transition-colors border border-gray-700/50"
-          >
-            <ArrowRight className="w-4 h-4" /> عودة
-          </button>
+          <div className="flex items-center justify-between mb-6">
+            <button 
+              id="watch-back-btn"
+              onClick={() => currentMedia.url.includes('series') || episodes.length > 0 ? setView('series') : setView('home')} 
+              className="flex items-center gap-2 text-slate-300 hover:text-white glass-card px-4 py-2 rounded-xl transition-all border border-white/10 text-xs sm:text-sm font-semibold active:scale-95"
+            >
+              {isRtl ? <ArrowRight className="w-4 h-4" /> : <ArrowLeft className="w-4 h-4" />}
+              <span>{t('btn_back', 'Back')}</span>
+            </button>
+
+            <button
+              onClick={() => handleShare(currentMedia.title, currentMedia.url)}
+              className="flex items-center gap-1.5 px-3.5 py-2 glass-card hover:border-blue-400/40 text-slate-300 hover:text-white rounded-xl text-xs font-semibold transition-all border border-white/10"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span>{t('btn_share', 'Share')}</span>
+            </button>
+          </div>
           
-          <h1 className="text-2xl md:text-3xl font-extrabold mb-6 text-center text-white">{currentMedia.title}</h1>
+          <h1 className="text-2xl sm:text-3xl font-black mb-6 text-center text-white tracking-tight text-balance">
+            {currentMedia.title}
+          </h1>
           
           {videoLinks.length > 0 ? (
             <div className="space-y-6">
-              {/* Video Player */}
-              <div className="aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl relative border border-gray-800">
-                <video 
-                  key={`${streamMode}-${activeVideoUrl || videoLinks[0]?.url}`}
-                  ref={videoRef}
-                  controls 
-                  autoPlay
-                  playsInline
-                  className="w-full h-full object-contain"
-                  src={streamMode === 'direct' ? (activeVideoUrl || videoLinks[0]?.url) : `/api/stream?url=${encodeURIComponent(activeVideoUrl || videoLinks[0]?.url)}`}
-                  controlsList="nodownload"
-                  onError={() => {
-                    if (streamMode === 'direct') {
-                      console.warn('Direct stream failed, falling back to proxy...');
-                      setStreamMode('proxy');
-                    } else {
-                      setVideoError(true);
-                    }
-                  }}
-                  onPlay={() => setVideoError(false)}
-                >
-                  <source src={activeVideoUrl || videoLinks[0]?.url} type="video/mp4" />
-                  <source src={activeVideoUrl || videoLinks[0]?.url} type="video/x-matroska" />
-                  متصفحك لا يدعم مشغل الفيديو.
-                </video>
+              {/* Cinema Player Container with Soft Ambient Glow */}
+              <div className="relative rounded-3xl overflow-hidden glass-panel border border-white/10 shadow-2xl bg-black">
+                <div className="aspect-video w-full">
+                  <video 
+                    key={`${streamMode}-${activeVideoUrl || videoLinks[0]?.url}`}
+                    ref={videoRef}
+                    controls 
+                    autoPlay
+                    playsInline
+                    className="w-full h-full object-contain"
+                    src={streamMode === 'direct' ? (activeVideoUrl || videoLinks[0]?.url) : `/api/stream?url=${encodeURIComponent(activeVideoUrl || videoLinks[0]?.url)}`}
+                    controlsList="nodownload"
+                    onError={() => {
+                      if (streamMode === 'direct') {
+                        console.warn('Direct stream failed, falling back to proxy...');
+                        setStreamMode('proxy');
+                      } else {
+                        setVideoError(true);
+                      }
+                    }}
+                    onPlay={() => setVideoError(false)}
+                  >
+                    <source src={activeVideoUrl || videoLinks[0]?.url} type="video/mp4" />
+                    <source src={activeVideoUrl || videoLinks[0]?.url} type="video/x-matroska" />
+                    Your browser does not support HTML5 video streaming.
+                  </video>
+                </div>
               </div>
 
               {/* Streaming Mode Switcher Banner */}
-              <div className="flex flex-wrap items-center justify-between gap-3 bg-gray-900/90 border border-gray-800 p-3.5 rounded-xl">
-                <div className="flex items-center gap-2 text-xs md:text-sm text-gray-300">
-                  <span className="font-semibold text-gray-400">طريقة التشغيل:</span>
-                  <div className="flex items-center bg-gray-800 p-1 rounded-lg border border-gray-700/60">
+              <div className="flex flex-wrap items-center justify-between gap-3 glass-panel p-4 rounded-2xl border border-white/10 shadow-lg">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <span className="text-xs sm:text-sm font-semibold text-slate-300">{t('player_title', 'Playback Mode')}:</span>
+                  <div className="flex items-center bg-black/40 p-1 rounded-xl border border-white/10">
                     <button
                       onClick={() => {
                         setStreamMode('direct');
                         setVideoError(false);
                       }}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                         streamMode === 'direct'
                           ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
-                          : 'text-gray-400 hover:text-white'
+                          : 'text-slate-400 hover:text-white'
                       }`}
-                      title="تشغيل رابط الفيديو مباشرة بدون سيرفر وسيط"
+                      title={t('player_mode_direct_desc', 'High-speed stream straight from original servers')}
                     >
                       <Zap className="w-3.5 h-3.5 text-yellow-300" />
-                      <span>مباشر من المصدر (Direct)</span>
+                      <span>{t('player_direct_mode', 'Direct Stream')}</span>
                     </button>
                     <button
                       onClick={() => {
                         setStreamMode('proxy');
                         setVideoError(false);
                       }}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                         streamMode === 'proxy'
                           ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                          : 'text-gray-400 hover:text-white'
+                          : 'text-slate-400 hover:text-white'
                       }`}
-                      title="تشغيل الفيديو عبر سيرفر البروكسي الداخلي لتفادي قيود CORS"
+                      title={t('player_mode_proxy_desc', 'Proxy stream through secure gateway to bypass CORS')}
                     >
                       <Shield className="w-3.5 h-3.5 text-cyan-300" />
-                      <span>عبر الوسيط (Proxy)</span>
+                      <span>{t('player_proxy_mode', 'Secure Proxy')}</span>
                     </button>
                   </div>
                 </div>
 
-                <div className="text-xs text-gray-400 font-mono dir-ltr truncate max-w-xs md:max-w-md">
+                <div className="text-[11px] text-slate-400 font-mono truncate">
                   {streamMode === 'direct' ? '⚡ Direct Source Mode (HTML5)' : '🛡️ Proxied Range Stream (/api/stream)'}
                 </div>
               </div>
 
+              {/* Error Recovery Card */}
               {videoError && (
-                <div className="bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 p-4 rounded-xl text-center text-sm flex flex-col sm:flex-row items-center justify-between gap-4">
-                  <div className="text-right">
+                <div className="glass-panel border-amber-500/30 text-amber-300 p-5 rounded-2xl text-sm flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
+                  <div className="text-start">
                     <p className="font-semibold">
                       {streamMode === 'direct'
-                        ? 'تعذر التشغيل المباشر من المصدر (قد يمنع خادم الفيديو طلبات CORS أو النطاق العريض).'
-                        : 'قد يكون رابط البث المباشر قد انتهت صلاحيته من المصدر أو يتطلب تحديثاً.'}
-                    </p>
-                    <p className="text-xs text-yellow-400/80 mt-1">
-                      {streamMode === 'direct' 
-                        ? 'يمكنك تجربة التبديل إلى "عبر الوسيط (Proxy)" أو فتح الرابط مباشرة في نافذة جديدة.' 
-                        : 'يمكنك النقر على "تحديث الرابط" لإعادة التوليد فوراً.'}
+                        ? t('player_error_direct', 'Direct link might be CORS-restricted. Switch to proxy mode.')
+                        : t('player_error_proxy', 'Stream error. Try another resolution or refresh.')}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -841,10 +990,10 @@ export default function AkwamApp() {
                           setStreamMode('proxy');
                           setVideoError(false);
                         }}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg flex items-center gap-1.5 text-xs transition-colors shadow-md shadow-blue-500/20"
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl flex items-center gap-1.5 text-xs transition-colors shadow-md shadow-blue-500/20"
                       >
                         <Shield className="w-3.5 h-3.5" />
-                        التبديل إلى الوسيط (Proxy)
+                        <span>{t('player_switch_proxy', 'Switch to Proxy')}</span>
                       </button>
                     ) : (
                       <button 
@@ -852,48 +1001,50 @@ export default function AkwamApp() {
                           setStreamMode('direct');
                           setVideoError(false);
                         }}
-                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg flex items-center gap-1.5 text-xs transition-colors shadow-md shadow-emerald-500/20"
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl flex items-center gap-1.5 text-xs transition-colors shadow-md shadow-emerald-500/20"
                       >
                         <Zap className="w-3.5 h-3.5" />
-                        تجربة التشغيل المباشر
+                        <span>{t('player_switch_direct', 'Try Direct Stream')}</span>
                       </button>
                     )}
                     <button 
                       onClick={() => fetchVideoLinks(currentMedia.url)}
-                      className="px-3.5 py-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg flex items-center gap-1 text-xs transition-colors"
-                      title="توليد رابط طازج"
+                      className="px-3.5 py-2 glass-card hover:bg-white/10 text-white font-semibold rounded-xl flex items-center gap-1 text-xs transition-colors border border-white/10"
+                      title={t('player_retry', 'Retry')}
                     >
                       <RefreshCw className="w-3.5 h-3.5" />
-                      تحديث الرابط
+                      <span>{t('player_retry', 'Retry')}</span>
                     </button>
                     {activeVideoUrl && (
                       <a 
                         href={activeVideoUrl} 
                         target="_blank" 
                         rel="noopener noreferrer"
-                        className="px-3.5 py-2 bg-yellow-600 hover:bg-yellow-500 text-black font-bold rounded-lg flex items-center gap-1 text-xs transition-colors"
+                        className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-xl flex items-center gap-1 text-xs transition-colors shadow-md"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
-                        فتح في نافذة جديدة
+                        <span>Link</span>
                       </a>
                     )}
                   </div>
                 </div>
               )}
               
-              {/* Controls Bar: Quality Selector & Download */}
-              <div className="bg-gray-800/90 border border-gray-700/60 p-5 rounded-2xl flex flex-col md:flex-row gap-4 items-center justify-between shadow-xl">
-                <div className="flex items-center gap-2 flex-wrap justify-center md:justify-start">
-                  <span className="text-gray-400 text-sm font-medium ml-2">الجودة المتوفرة:</span>
+              {/* Controls Bar: Quality Selector, Embed & Download */}
+              <div className="glass-panel p-5 rounded-3xl border border-white/10 flex flex-col md:flex-row gap-4 items-center justify-between shadow-2xl">
+                <div className="flex items-center gap-2.5 flex-wrap justify-center md:justify-start">
+                  <span className="text-slate-400 text-xs sm:text-sm font-semibold">
+                    {t('player_quality_select', 'Select Resolution:')}
+                  </span>
                   {videoLinks.map((link, idx) => (
                     <button 
                       key={`quality-${idx}`}
                       id={`quality-btn-${idx}`}
                       onClick={() => switchQuality(idx)}
-                      className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                      className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all active:scale-95 cursor-pointer ${
                         selectedQualityIdx === idx
-                          ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 scale-105'
-                          : 'bg-gray-700/80 text-gray-300 hover:bg-gray-700 hover:text-white'
+                          ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 scale-105 border border-blue-400/40'
+                          : 'glass-card text-slate-300 hover:text-white border border-white/5'
                       }`}
                     >
                       {link.quality}
@@ -901,7 +1052,7 @@ export default function AkwamApp() {
                   ))}
                 </div>
                 
-                <div className="flex items-center gap-2.5 flex-wrap justify-center md:justify-end">
+                <div className="flex items-center gap-3 flex-wrap justify-center md:justify-end">
                   {/* Embed Video Button */}
                   <button 
                     id="embed-video-btn"
@@ -910,44 +1061,37 @@ export default function AkwamApp() {
                       setEmbedTitle(currentMedia.title);
                       setIsEmbedOpen(true);
                     }}
-                    className="flex items-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-sm font-bold transition-all shadow-md shadow-blue-500/20 hover:scale-102"
-                    title="الحصول على كود تضمين متجاوب للموقع"
+                    className="flex items-center gap-1.5 px-4 py-2.5 glass-card hover:border-blue-400/40 text-slate-200 hover:text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-md active:scale-95"
+                    title={t('nav_embed', 'Embed Code')}
                   >
-                    <Code2 className="w-4 h-4" />
-                    <span>تضمين (Embed)</span>
+                    <Code2 className="w-4 h-4 text-blue-400" />
+                    <span>{t('nav_embed', 'Embed Code')}</span>
                   </button>
 
-                  {activeVideoUrl && (
-                    <a 
-                      id="direct-open-link"
-                      href={activeVideoUrl} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 px-4 py-2.5 bg-gray-700 hover:bg-gray-600 rounded-xl text-sm font-semibold text-gray-200 transition-colors"
-                      title="فتح الرابط المباشر"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                      <span className="hidden sm:inline">رابط مباشر</span>
-                    </a>
-                  )}
-                  
+                  {/* Download Button */}
                   <a 
                     id="download-btn"
                     href={`/api/download?url=${encodeURIComponent(activeVideoUrl || videoLinks[0].url)}&title=${encodeURIComponent(currentMedia.title)}`}
                     download
-                    className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-500 rounded-xl font-bold text-white transition-all shadow-lg shadow-green-600/20 hover:scale-102"
+                    className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 rounded-xl font-bold text-xs sm:text-sm text-white transition-all shadow-lg shadow-emerald-600/25 active:scale-95 border border-emerald-400/30"
                   >
-                    <Download className="w-5 h-5" />
-                    تحميل ({videoLinks[selectedQualityIdx]?.quality || 'الفيديو'})
+                    <Download className="w-4 h-4" />
+                    <span>
+                      {t('player_btn_download', 'Download').replace('{q}', videoLinks[selectedQualityIdx]?.quality || 'HD')}
+                    </span>
                   </a>
                 </div>
               </div>
             </div>
           ) : (
-             <div className="text-center py-20 bg-gray-800/40 border border-gray-800 rounded-2xl">
-               <AlertCircle className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-               <p className="text-lg text-gray-300 font-medium">لم يتم العثور على روابط تشغيل لهذا العنصر.</p>
-               <p className="text-sm text-gray-500 mt-1">قد يكون المحتوى قيد التحديث في المصدر.</p>
+             <div className="text-center py-20 glass-panel border border-white/10 rounded-3xl p-8">
+               <AlertCircle className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+               <p className="text-base text-slate-300 font-medium mb-1">
+                 {t('player_error_proxy', 'Unable to extract stream link for this title.')}
+               </p>
+               <p className="text-xs text-slate-500 mt-1">
+                 {t('toast_data_error', 'Content may be temporarily updating on upstream server.')}
+               </p>
              </div>
           )}
         </div>
@@ -963,4 +1107,3 @@ export default function AkwamApp() {
     </div>
   );
 }
-
