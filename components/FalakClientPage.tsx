@@ -10,6 +10,7 @@ import Player from '@/components/Player';
 import MediaCard from '@/components/MediaCard';
 import UnauthorizedDomainModal from '@/components/UnauthorizedDomainModal';
 import Hero from '@/components/Hero';
+import FalakHeroSearch from '@/components/FalakHeroSearch';   // ← جديد
 import { fetchTMDB } from '@/lib/tmdb';
 import { auth, googleProvider, db } from '@/lib/firebase';
 import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
@@ -30,7 +31,6 @@ const LOCAL_CONTINUE_WATCHING_KEY = 'falak_continue_watching';
 const LOCAL_RECENT_SEARCHES_KEY = 'falak_recent_searches';
 const MAX_SEARCH_CACHE = 50;
 
-/** Composite key — يمنع تصادم الفيلم والمسلسل عند تطابق الرقم */
 const getMediaKey = (item: any): string => {
   const type = item?.mediaType || item?.media_type || 'movie';
   return `${type}_${item?.id}`;
@@ -48,12 +48,10 @@ export interface FalakClientPageProps {
 }
 
 export default function FalakClientPage({ initialSearchParams }: FalakClientPageProps) {
-  // Language & Localization
   const { lang, setLang } = useLanguage();
   const t = T[lang] || T.ar;
   const tmdbLang = LANGUAGES.find((l) => l.code === lang)?.tmdb || 'ar-SA';
 
-  // Navigation & UI
   const [activeTab, setActiveTab] = useState<'home' | 'search' | 'favorites'>('home');
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [genreLogic, setGenreLogic] = useState<'or' | 'and'>('or');
@@ -61,13 +59,11 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
   const [loading, setLoading] = useState(true);
   const [continueWatching, setContinueWatching] = useState<ContinueWatchingItem[]>([]);
 
-  // Detail Modal & Player
   const [selectedMedia, setSelectedMedia] = useState<any>(null);
   const [showPlayer, setShowPlayer] = useState(false);
   const [currentSeason, setCurrentSeason] = useState(1);
   const [currentEpisode, setCurrentEpisode] = useState(1);
 
-  // Loading, toast, modal
   const [isInitialPermalinkLoading, setIsInitialPermalinkLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [unauthorizedDomain, setUnauthorizedDomain] = useState<string | null>(null);
@@ -77,7 +73,6 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
     selectedMediaRef.current = selectedMedia;
   }, [selectedMedia]);
 
-  // Toast with cancellable timer
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showAppToast = useCallback((msg: string) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -93,7 +88,6 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
     };
   }, []);
 
-  // Search State
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<MediaItem[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -103,11 +97,9 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
   const searchCacheRef = useRef<Map<string, MediaItem[]>>(new Map());
   const searchRequestIdRef = useRef(0);
 
-  // Auth & Favorites
   const [user, setUser] = useState<User | null>(null);
   const [favorites, setFavorites] = useState<MediaItem[]>([]);
 
-  // Smooth tab switching
   const handleTabChange = useCallback((tab: 'home' | 'search' | 'favorites') => {
     setActiveTab(tab);
     if (typeof window !== 'undefined') {
@@ -128,7 +120,6 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
         const cloudFavs: MediaItem[] = [];
         snapshot.forEach((docSnap) => cloudFavs.push(docSnap.data() as MediaItem));
 
-        // اقرأ المفضلات المحلية من localStorage (يتجنب stale closure)
         let localFavs: MediaItem[] = [];
         try {
           const raw = localStorage.getItem(LOCAL_FAVORITES_KEY);
@@ -149,7 +140,6 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
           }
         });
 
-        // رفع المفضلات المحلية للسحابة (fire-and-forget)
         toUpload.forEach((item) => {
           setDoc(
             doc(db, 'users', currentUser.uid, 'favorites', getMediaKey(item)),
@@ -168,7 +158,6 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
     return () => unsubscribe();
   }, []);
 
-  // ===== Toggle favorite: optimistic UI, fire-and-forget cloud =====
   const toggleFavorite = useCallback(
     async (item: any) => {
       const mediaItem: MediaItem = {
@@ -202,7 +191,6 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
     [favorites, user]
   );
 
-  // ===== Continue watching =====
   const updateContinueWatching = useCallback(
     (item: any, season?: number, episode?: number) => {
       setContinueWatching((prev) => {
@@ -238,7 +226,6 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
     });
   }, []);
 
-  // ===== Auth handlers =====
   const handleLogin = async () => {
     try {
       await signInWithPopup(auth, googleProvider);
@@ -272,7 +259,6 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
     }
   };
 
-  // ===== Language change =====
   const handleLanguageChange = (newLang: LangCode) => {
     setLang(newLang);
     try {
@@ -283,14 +269,12 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
       const found = LANGUAGES.find((l) => l.code === newLang);
       document.documentElement.dir = found?.dir || (newLang === 'ar' ? 'rtl' : 'ltr');
     }
-    // مسح كاش البحث عند تغيير اللغة
     searchCacheRef.current.clear();
     searchRequestIdRef.current++;
     const tNew = T[newLang] || T.ar;
     showAppToast(tNew.toast_lang_changed || '🌐 Language changed');
   };
 
-  // ===== Genre filters =====
   const handleToggleGenre = (genreId: string) => {
     setSelectedGenres((prev) =>
       prev.includes(genreId) ? prev.filter((id) => id !== genreId) : [...prev, genreId]
@@ -298,7 +282,6 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
   };
   const handleClearGenres = () => setSelectedGenres([]);
 
-  // ===== Catalog fetch =====
   useEffect(() => {
     let isCancelled = false;
     async function loadMovies() {
@@ -325,7 +308,6 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
     };
   }, [selectedGenres, genreLogic, tmdbLang]);
 
-  // ===== Search input handler =====
   const handleSearchChange = useCallback((q: string) => {
     setSearchQuery(q);
     setSearchOpen(true);
@@ -335,7 +317,6 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
     }
   }, []);
 
-  // ===== Search effect: cache + requestId + language =====
   useEffect(() => {
     const q = searchQuery.trim();
 
@@ -345,7 +326,6 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
       return;
     }
 
-    // Cache key includes lang to avoid cross-language collisions
     const cacheKey = `${lang}_${q}`;
     const cached = searchCacheRef.current.get(cacheKey);
     if (cached) {
@@ -359,7 +339,6 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
 
     const timer = setTimeout(async () => {
       try {
-        // مطابق لـ HTML: include_adult=false + language
         const data = await fetchTMDB(
           `/search/multi?query=${encodeURIComponent(q)}&include_adult=false`,
           { lang: tmdbLang }
@@ -394,7 +373,6 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
     return () => clearTimeout(timer);
   }, [searchQuery, tmdbLang, lang]);
 
-  // ===== Recent searches =====
   const saveToRecentSearch = useCallback((term: string) => {
     const clean = term.trim();
     if (!clean) return;
@@ -414,13 +392,14 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
     } catch {}
   }, []);
 
-  const handleSelectRecentSearch = useCallback((term: string) => {
-    handleSearchChange(term);
-  }, [handleSearchChange]);
+  const handleSelectRecentSearch = useCallback(
+    (term: string) => {
+      handleSearchChange(term);
+    },
+    [handleSearchChange]
+  );
 
-  // ===== Initial mount: restore state + handle permalink =====
   useEffect(() => {
-    // 1. Favorites
     try {
       const stored = localStorage.getItem(LOCAL_FAVORITES_KEY);
       if (stored) {
@@ -431,7 +410,6 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
       console.warn('Could not read guest favorites:', e);
     }
 
-    // 2. Recent searches
     try {
       const stored = localStorage.getItem(LOCAL_RECENT_SEARCHES_KEY);
       if (stored) {
@@ -442,13 +420,11 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
       console.warn('Could not read recent searches:', e);
     }
 
-    // 3. Tab from URL
     const search = typeof window !== 'undefined' ? window.location.search : '';
     const params = new URLSearchParams(search);
     const tabParam = initialSearchParams?.tab || params.get('tab');
     if (tabParam === 'search' || tabParam === 'favorites') setActiveTab(tabParam);
 
-    // 4. Continue watching
     try {
       const stored = localStorage.getItem(LOCAL_CONTINUE_WATCHING_KEY);
       if (stored) {
@@ -459,7 +435,6 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
       console.warn('Could not read continue watching history:', e);
     }
 
-    // 5. Permalink from URL or initialSearchParams
     const targetType = initialSearchParams?.type || params.get('type');
     const targetId = initialSearchParams?.id || params.get('id');
     const parsed =
@@ -479,7 +454,6 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
       let cancelled = false;
       setIsInitialPermalinkLoading(true);
 
-      // ✅ الإصلاح الأساسي: تمرير اللغة
       fetchTMDB(
         `/${parsed.type}/${parsed.id}?append_to_response=credits,videos,external_ids`,
         { lang: tmdbLang }
@@ -520,7 +494,6 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ===== popstate handler (Back/Forward) =====
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -551,7 +524,7 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
           try {
             const details = await fetchTMDB(
               `/${parsed.type}/${parsed.id}?append_to_response=credits,videos,external_ids`,
-              { lang: tmdbLang } // ✅ تمرير اللغة
+              { lang: tmdbLang }
             );
             const fullItem = { ...details, mediaType: parsed.type };
             setSelectedMedia(fullItem);
@@ -576,7 +549,6 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
     };
   }, [tmdbLang]);
 
-  // ===== Open detail panel =====
   const handleOpenDetail = useCallback(
     async (
       id: number,
@@ -613,7 +585,6 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
       );
 
       try {
-        // ✅ تمرير اللغة
         const details = await fetchTMDB(
           `/${resolvedType}/${id}?append_to_response=credits,videos,external_ids`,
           { lang: tmdbLang }
@@ -649,7 +620,7 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
     [continueWatching, activeTab, tmdbLang]
   );
 
-  // ===== Select search result =====
+  // ===== البحث من Header =====
   const handleSelectSearchResult = useCallback(
     (item: MediaItem) => {
       const type = (item as any).media_type || item.mediaType || 'movie';
@@ -662,19 +633,27 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
     [saveToRecentSearch, handleOpenDetail]
   );
 
-  // ===== QuickPlay — الإصلاح: احسب موضع الاستئناف قبل pushState =====
+  // ===== البحث من Hero (نفس السلوك لكن يبدأ من صفر) =====
+  const handleSelectHeroResult = useCallback(
+    (item: MediaItem) => {
+      const type = (item as any).media_type || item.mediaType || 'movie';
+      const title = item.title || item.name || '';
+      saveToRecentSearch(title);
+      handleOpenDetail(item.id, type, title);
+    },
+    [saveToRecentSearch, handleOpenDetail]
+  );
+
   const handleQuickPlay = useCallback(
     async (item: any) => {
       const isTv = item.mediaType === 'tv' || item.media_type === 'tv';
       const resolvedType = isTv ? 'tv' : 'movie';
       const initialTitle = item.title || item.name;
 
-      // ✅ احسب أولاً
       const saved = continueWatching.find((i) => getMediaKey(i) === getMediaKey(item));
       const startS = saved?.season || 1;
       const startE = saved?.episode || 1;
 
-      // ✅ الـ URL يحمل الموضع الصحيح
       const permalink = buildPermalink({
         type: resolvedType,
         id: item.id,
@@ -697,7 +676,7 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
       try {
         const details = await fetchTMDB(
           `/${resolvedType}/${item.id}?append_to_response=credits,videos,external_ids`,
-          { lang: tmdbLang } // ✅ تمرير اللغة
+          { lang: tmdbLang }
         );
         const fullItem = { ...details, mediaType: resolvedType };
         setSelectedMedia(fullItem);
@@ -719,7 +698,6 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
     [continueWatching, activeTab, tmdbLang, updateContinueWatching]
   );
 
-  // ===== Episode change =====
   const handleSelectEpisode = (season: number, episode: number) => {
     setCurrentSeason(season);
     setCurrentEpisode(episode);
@@ -746,7 +724,6 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
     }
   };
 
-  // ===== Close handlers =====
   const handleCloseModal = () => {
     setSelectedMedia(null);
     setShowPlayer(false);
@@ -762,7 +739,6 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
 
   const handleClosePlayer = () => setShowPlayer(false);
 
-  // ===== Render =====
   return (
     <div className="bg-[#07080b] text-white min-h-screen flex flex-col antialiased">
       <Header
@@ -793,15 +769,20 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
         </div>
       )}
 
-      {/* استُخدم <div> بدل <main> لأن app/layout.tsx يحتوي على <main> أصلاً */}
       <div className="flex-1 pt-[72px] pb-[calc(76px+env(safe-area-inset-bottom,0px))] md:pb-0">
         {/* ================= HOME ================= */}
         {activeTab === 'home' && (
           <div>
             <Hero />
 
+            {/* ✅ البحث البارز أسفل الـ Hero مباشرة — مستقل تماماً عن AkwamApp */}
+            <FalakHeroSearch
+              lang={lang}
+              onSelectMedia={handleSelectHeroResult}
+            />
+
             {continueWatching.length > 0 && (
-              <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
+              <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <span className="w-1.5 h-6 bg-red-600 rounded-full" />

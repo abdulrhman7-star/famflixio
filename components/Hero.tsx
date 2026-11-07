@@ -9,7 +9,7 @@ export default function Hero() {
       </div>
 
       <div className="relative z-10 px-4 text-center">
-        <h1 className="text-4xl md:text-6xl font-black bg-clip-text text-transparent bg-gradient-to-r from-red-600 to-red-800 tracking-tight leading-tight">
+        <h1 className="text-4xl md:text-6xl font-black text-white tracking-tight leading-tight">
           شاهد عالمك السينمائي <br /> على منصة فلك
         </h1>
       </div>
