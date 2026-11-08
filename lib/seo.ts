@@ -3,8 +3,8 @@ import { MediaItem } from '@/types';
 import { slugify } from './helpers';
 
 export const buildPermalink = (media: MediaItem | null, season?: number, episode?: number) => {
-    if (!media) return typeof window !== 'undefined' ? window.location.origin + window.location.pathname : 'https://falak.tv/';
-    const url = new URL((typeof window !== 'undefined' ? window.location.origin : 'https://falak.tv/'));
+    if (!media) return typeof window !== 'undefined' ? window.location.origin + window.location.pathname : 'http://localhost:3000';
+    const url = new URL((typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'));
     url.searchParams.set('type', media.mediaType);
     url.searchParams.set('id', String(media.id));
     const title = slugify(media.title || media.name);

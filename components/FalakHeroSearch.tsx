@@ -31,20 +31,26 @@ export default function FalakHeroSearch({ lang, onSelectMedia }: FalakHeroSearch
   useEffect(() => {
     const q = query.trim();
     if (q.length < 2) {
-      setLoading(false);
-      setResults([]);
+      queueMicrotask(() => {
+        setLoading(false);
+        setResults([]);
+      });
       return;
     }
 
     const cacheKey = `${lang}_${q}`;
     const cached = cacheRef.current.get(cacheKey);
     if (cached) {
-      setResults(cached);
-      setLoading(false);
+      queueMicrotask(() => {
+        setResults(cached);
+        setLoading(false);
+      });
       return;
     }
 
-    setLoading(true);
+    queueMicrotask(() => {
+      setLoading(true);
+    });
     const reqId = ++reqIdRef.current;
 
     const timer = setTimeout(async () => {

@@ -1,17 +1,23 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { WifiOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-export function useOnlineStatus() {
-  const [isOnline, setIsOnline] = useState(
-    typeof navigator !== 'undefined' ? navigator.onLine : true
-  );
+export function OfflineIndicator() {
+  const [isOffline, setIsOffline] = useState(false);
 
   useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
+    if (typeof window === 'undefined') return;
+
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+
+    if (!navigator.onLine) {
+      queueMicrotask(() => {
+        setIsOffline(true);
+      });
+    }
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
@@ -22,27 +28,23 @@ export function useOnlineStatus() {
     };
   }, []);
 
-  return isOnline;
-}
-
-export const OfflineIndicator: React.FC = () => {
-  const isOnline = useOnlineStatus();
-
   return (
     <AnimatePresence>
-      {!isOnline && (
+      {isOffline && (
         <motion.div
-          initial={{ y: 50, opacity: 0 }}
+          initial={{ y: -50, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
-          exit={{ y: 50, opacity: 0 }}
-          className="fixed bottom-24 left-4 right-4 md:left-auto md:right-8 md:bottom-8 z-50 flex items-center gap-3 rounded-2xl bg-amber-500 px-4 py-3 text-sm font-bold text-white shadow-2xl shadow-amber-500/20 backdrop-blur-md border border-white/20"
+          exit={{ y: -50, opacity: 0 }}
+          transition={{ duration: 0.25, ease: 'easeOut' }}
+          className="fixed top-0 inset-x-0 z-[9999] bg-red-600 text-white text-xs font-bold py-1.5 px-4 flex items-center justify-center gap-2 shadow-lg select-none"
+          dir="rtl"
         >
-          <div className="bg-white/20 p-1.5 rounded-full">
-            <WifiOff className="w-4 h-4 text-white" />
-          </div>
-          <span>Offline Mode — Using cached data.</span>
+          <WifiOff className="w-3.5 h-3.5 shrink-0" />
+          <span>لا يوجد اتصال بالإنترنت</span>
         </motion.div>
       )}
     </AnimatePresence>
   );
-};
+}
+
+export default OfflineIndicator;

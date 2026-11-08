@@ -128,7 +128,7 @@ export function getCanonicalBaseUrl(): string {
   if (process.env.NEXT_PUBLIC_SITE_URL) {
     return process.env.NEXT_PUBLIC_SITE_URL.replace(/\/+$/, '');
   }
-  return 'https://falak.tv';
+  return 'http://localhost:3000';
 }
 
 /**

@@ -24,6 +24,9 @@ interface HeaderProps {
   onSelectResult: (item: any) => void;
   searchOpen: boolean;
   setSearchOpen: (open: boolean) => void;
+  recentSearches?: string[];
+  onSelectRecent?: (term: string) => void;
+  onClearRecent?: () => void;
 }
 
 export default function Header({

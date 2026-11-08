@@ -321,20 +321,26 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
     const q = searchQuery.trim();
 
     if (q.length < 2) {
-      setSearchLoading(false);
-      setSearchResults([]);
+      queueMicrotask(() => {
+        setSearchLoading(false);
+        setSearchResults([]);
+      });
       return;
     }
 
     const cacheKey = `${lang}_${q}`;
     const cached = searchCacheRef.current.get(cacheKey);
     if (cached) {
-      setSearchResults(cached);
-      setSearchLoading(false);
+      queueMicrotask(() => {
+        setSearchResults(cached);
+        setSearchLoading(false);
+      });
       return;
     }
 
-    setSearchLoading(true);
+    queueMicrotask(() => {
+      setSearchLoading(true);
+    });
     const requestId = ++searchRequestIdRef.current;
 
     const timer = setTimeout(async () => {
@@ -404,7 +410,11 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
       const stored = localStorage.getItem(LOCAL_FAVORITES_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) setFavorites(parsed);
+        if (Array.isArray(parsed)) {
+          queueMicrotask(() => {
+            setFavorites(parsed);
+          });
+        }
       }
     } catch (e) {
       console.warn('Could not read guest favorites:', e);
@@ -414,7 +424,11 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
       const stored = localStorage.getItem(LOCAL_RECENT_SEARCHES_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) setRecentSearches(parsed);
+        if (Array.isArray(parsed)) {
+          queueMicrotask(() => {
+            setRecentSearches(parsed);
+          });
+        }
       }
     } catch (e) {
       console.warn('Could not read recent searches:', e);
@@ -423,13 +437,21 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
     const search = typeof window !== 'undefined' ? window.location.search : '';
     const params = new URLSearchParams(search);
     const tabParam = initialSearchParams?.tab || params.get('tab');
-    if (tabParam === 'search' || tabParam === 'favorites') setActiveTab(tabParam);
+    if (tabParam === 'search' || tabParam === 'favorites') {
+      queueMicrotask(() => {
+        setActiveTab(tabParam);
+      });
+    }
 
     try {
       const stored = localStorage.getItem(LOCAL_CONTINUE_WATCHING_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) setContinueWatching(parsed);
+        if (Array.isArray(parsed)) {
+          queueMicrotask(() => {
+            setContinueWatching(parsed);
+          });
+        }
       }
     } catch (e) {
       console.warn('Could not read continue watching history:', e);
@@ -452,7 +474,9 @@ export default function FalakClientPage({ initialSearchParams }: FalakClientPage
 
     if (parsed && parsed.isValid && !isNaN(parsed.id)) {
       let cancelled = false;
-      setIsInitialPermalinkLoading(true);
+      queueMicrotask(() => {
+        setIsInitialPermalinkLoading(true);
+      });
 
       fetchTMDB(
         `/${parsed.type}/${parsed.id}?append_to_response=credits,videos,external_ids`,

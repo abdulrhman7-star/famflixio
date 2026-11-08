@@ -1,15 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 }
 
 export function usePWAInstall() {
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstallable, setIsInstallable] = useState(false);
+  const deferredPromptRef = useRef<BeforeInstallPromptEvent | null>(null);
+  const [canInstall, setCanInstall] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
 
@@ -19,27 +19,29 @@ export function usePWAInstall() {
     // Check if app is already running in standalone mode
     const isStandalone =
       window.matchMedia('(display-mode: standalone)').matches ||
-      (window.navigator as any).standalone === true;
+      (window.navigator as unknown as { standalone?: boolean }).standalone === true;
 
-    // Detect iOS
-    const ua = window.navigator.userAgent;
-    const iosDevice = /iPad|iPhone|iPod/.test(ua) && !(window as any).MSStream;
+    // Detect iOS devices (Safari doesn't support beforeinstallprompt)
+    const ua = window.navigator.userAgent.toLowerCase();
+    const isIOSDevice =
+      /iphone|ipad|ipod/.test(ua) &&
+      !(window as unknown as { MSStream?: unknown }).MSStream;
 
     queueMicrotask(() => {
       setIsInstalled(isStandalone);
-      setIsIOS(iosDevice && !isStandalone);
+      setIsIOS(isIOSDevice && !isStandalone);
     });
 
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
-      setIsInstallable(true);
+      deferredPromptRef.current = e as BeforeInstallPromptEvent;
+      setCanInstall(true);
     };
 
     const handleAppInstalled = () => {
       setIsInstalled(true);
-      setIsInstallable(false);
-      setDeferredPrompt(null);
+      setCanInstall(false);
+      deferredPromptRef.current = null;
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -51,25 +53,28 @@ export function usePWAInstall() {
     };
   }, []);
 
-  const install = async () => {
-    if (!deferredPrompt) return;
+  const promptInstall = useCallback(async (): Promise<boolean> => {
+    if (!deferredPromptRef.current) return false;
     try {
-      await deferredPrompt.prompt();
-      const choiceResult = await deferredPrompt.userChoice;
-      if (choiceResult.outcome === 'accepted') {
+      await deferredPromptRef.current.prompt();
+      const choice = await deferredPromptRef.current.userChoice;
+      if (choice.outcome === 'accepted') {
         setIsInstalled(true);
-        setIsInstallable(false);
+        setCanInstall(false);
+        deferredPromptRef.current = null;
+        return true;
       }
-      setDeferredPrompt(null);
+      return false;
     } catch (err) {
-      console.error('Error during PWA installation:', err);
+      console.error('Error invoking PWA installation prompt:', err);
+      return false;
     }
-  };
+  }, []);
 
   return {
-    isInstallable,
+    canInstall,
     isInstalled,
     isIOS,
-    install,
+    promptInstall,
   };
 }

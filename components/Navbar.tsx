@@ -21,6 +21,7 @@ import {
 import EmbedModal from './EmbedModal';
 import { useLanguage } from '@/lib/LanguageContext';
 import { LangCode } from '@/types';
+import { PWAInstallButton } from './PWAInstallButton';
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -195,6 +196,11 @@ export default function Navbar() {
               <span className="hidden md:inline">{t('nav_embed', 'Embed Code')}</span>
             </button>
 
+            {/* PWA Install Button */}
+            <div className="hidden sm:flex items-center">
+              <PWAInstallButton />
+            </div>
+
             {/* Modern Glassmorphic Language Selector Dropdown */}
             <div className="relative" ref={langMenuRef}>
               <button
@@ -321,7 +327,7 @@ export default function Navbar() {
                 <span>{t('nav_history', 'Watch History')}</span>
               </button>
 
-              <div className="pt-2 border-t border-white/10 flex items-center justify-between">
+              <div className="pt-3 border-t border-white/10 flex items-center justify-between">
                 <span className="text-xs text-slate-400 flex items-center gap-1.5">
                   <Globe className="w-3.5 h-3.5 text-blue-400" />
                   {t('nav_language', 'Language')}
@@ -341,6 +347,10 @@ export default function Navbar() {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              <div className="pt-2 flex justify-center">
+                <PWAInstallButton />
               </div>
             </div>
           </div>
